@@ -6,13 +6,16 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { api } from "@/convex/_generated/api";
 import { BOOKING_STATUS } from "@/convex/constants";
+import { useAuth } from "@clerk/nextjs";
 import { useMutation, useQuery } from "convex/react";
 
 export default function AppointmentsPage() {
   const { toast } = useToast();
-  const TEST_USER_ID = "test_user_id"; // For Phase 1 testing
+  // const TEST_USER_ID = "test_user_id"; // For Phase 1 testing
+    const { userId: currentUserId } = useAuth();
+
   
-  const bookings = useQuery(api.bookings.getByUser, { userId: TEST_USER_ID });
+  const bookings = useQuery(api.bookings.getByUser, { userId: currentUserId });
   const cancelBooking = useMutation(api.bookings.cancel);
 
   const handleCancel = async (bookingId: string) => {

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
+import { useAuth } from "@clerk/nextjs";
 import { useMutation, useQuery } from "convex/react";
 import { useParams, useRouter } from "next/navigation";
 import React, { useEffect, useState } from "react";
@@ -19,6 +20,10 @@ export default function BookPage() {
   const [serviceName, setServiceName] = useState("Haircut");
   
   const TEST_USER_ID = "test_user_id"; // For Phase 1 testing
+
+  const { userId: currentUserId } = useAuth();
+
+
 
   // Cast the barberId string from params to a proper Convex ID type
   const barberIdAsId = barberId as unknown as Id<"barbers">;
@@ -95,11 +100,20 @@ export default function BookPage() {
 
   const handleBooking = async () => {
     if (!selectedSlot) return;
-    
+
+    if (!currentUserId) {
+      toast({
+        title: "Booking failed",
+        description: "User is not authenticated.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
       await createBooking({
         slotId: selectedSlot,
-        userId: TEST_USER_ID, // We'll replace this with actual auth in Phase 2
+        userId: currentUserId, // Now guaranteed to be a string
         serviceName,
       });
       
