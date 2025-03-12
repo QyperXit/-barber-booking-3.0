@@ -184,7 +184,7 @@ export default function BookPage() {
               }`}
             >
               <button
-                className={`w-full p-4 flex flex-col items-center justify-center gap-2 ${
+                className={`w-full p-4 cursor-pointer flex flex-col items-center justify-center gap-2 ${
                   slot.isBooked 
                     ? 'cursor-not-allowed' 
                     : 'hover:scale-[0.98] active:scale-[0.97] transition-transform'

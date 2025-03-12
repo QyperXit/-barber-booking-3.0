@@ -49,7 +49,10 @@ export const create = mutation({
     }
     
     // Update the slot to be booked
-    await ctx.db.patch(slotId, { isBooked: true });
+    await ctx.db.patch(slotId, { 
+      isBooked: true,
+      lastUpdated: Date.now()
+    });
     
     // Create the booking
     const bookingId = await ctx.db.insert("bookings", {
@@ -81,7 +84,10 @@ export const cancel = mutation({
     });
     
     // Update the slot to be available again
-    await ctx.db.patch(booking.slotId, { isBooked: false });
+    await ctx.db.patch(booking.slotId, { 
+      isBooked: false,
+      lastUpdated: Date.now()
+    });
     
     return bookingId;
   },

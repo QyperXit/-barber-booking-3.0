@@ -19,6 +19,7 @@ export default defineSchema({
     endTime: v.number(), // Minutes since midnight (e.g., 630 for 10:30 AM)
     isBooked: v.boolean(),
     price: v.number(),
+    lastUpdated: v.optional(v.number()), // Timestamp for when the slot was last updated
   }).index("by_barber", ["barberId"])
     .index("by_barber_date", ["barberId", "date"])
     .index("by_date", ["date"]),

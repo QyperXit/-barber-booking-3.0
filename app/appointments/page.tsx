@@ -1,4 +1,4 @@
-// app/appointments/page.tsx (continued)
+// app/appointments/page.tsx
 'use client';
 
 import { formatDate, formatTime } from "@/components/lib/utils";
@@ -36,23 +36,23 @@ export default function AppointmentsPage() {
 
   return (
     <div className="container mx-auto p-6">
-      <h1 className="text-3xl font-bold mb-6">My Appointments</h1>
+      <h1 className="text-3xl font-bold mb-6 text-gray-100">My Appointments</h1>
       
       {bookings.length === 0 ? (
-        <p>You don't have any appointments yet.</p>
+        <p className="text-gray-200">You don't have any appointments yet.</p>
       ) : (
         <div className="space-y-4">
           {bookings.map((booking) => (
-            <div key={booking._id} className="border rounded-lg p-4 shadow-sm">
+            <div key={booking._id} className="border rounded-lg p-4 shadow-sm bg-gray-700">
               <div className="flex justify-between">
                 <div>
-                  <h2 className="text-xl font-bold">{booking.barber?.name}</h2>
-                  <p className="text-gray-600">{booking.serviceName}</p>
-                  <p className="mt-2">
+                  <h2 className="text-xl font-bold text-gray-100">{booking.barber?.name}</h2>
+                  <p className="text-gray-300">{booking.serviceName}</p>
+                  <p className="mt-2 text-[#A0AEC0]"> {/* Muted Gray for Date */}
                     {formatDate(booking.slot?.date)} at {formatTime(booking.slot?.startTime)}
                   </p>
                   <p className="mt-1 text-sm font-medium">
-                    Status: <span className="capitalize">{booking.status}</span>
+                    Status: <span className={`capitalize ${booking.status === BOOKING_STATUS.CONFIRMED ? 'text-[#68D391]' : booking.status === BOOKING_STATUS.CANCELLED ? 'text-[#F56565]' : 'text-[#BEE3F8]'}`}>{booking.status}</span> {/* Soft Blue for other statuses */}
                   </p>
                 </div>
                 
@@ -60,6 +60,7 @@ export default function AppointmentsPage() {
                   <Button 
                     variant="destructive"
                     onClick={() => handleCancel(booking._id)}
+                    className="bg-gray-600 cursor-pointer hover:bg-gray-700 text-white"
                   >
                     Cancel
                   </Button>
