@@ -36,8 +36,10 @@ export const create = mutation({
     slotId: v.id("slots"),
     userId: v.string(),
     serviceName: v.string(),
+    userName: v.optional(v.string()),
+    userEmail: v.optional(v.string()),
   },
-  handler: async (ctx, { slotId, userId, serviceName }) => {
+  handler: async (ctx, { slotId, userId, serviceName, userName, userEmail }) => {
     // Get the slot
     const slot = await ctx.db.get(slotId);
     if (!slot) {
@@ -56,22 +58,30 @@ export const create = mutation({
     }
 
     // Get the user info
-    const user = await ctx.db
+    let user = await ctx.db
       .query("users")
       .withIndex("by_user_id", q => q.eq("userId", userId))
       .first();
     
+    // If user doesn't exist, create a user record with the provided name and email
     if (!user) {
-      console.warn("User not found, creating a basic user record");
-      // Create a basic user record if needed
+      console.warn("User not found, creating a user record");
+      // Create a user record with the provided name or a better default
       await ctx.db.insert("users", {
-        name: "Customer",
-        email: "customer@example.com",
+        name: userName || "Guest User",
+        email: userEmail || `user-${userId.substring(0, 8)}@example.com`,
         userId,
       });
+      
+      // Fetch the newly created user
+      user = await ctx.db
+        .query("users")
+        .withIndex("by_user_id", q => q.eq("userId", userId))
+        .first();
     }
     
-    const userName = user ? user.name : "Customer";
+    // Use the user's name from the database, or the provided userName, or a better default
+    const customerName = user?.name || userName || "Guest User";
     
     // Update the slot to be booked
     await ctx.db.patch(slotId, { 
@@ -98,7 +108,7 @@ export const create = mutation({
     try {
       await ctx.db.insert("appointments", {
         userId,
-        userName,
+        userName: customerName,
         barberId: slot.barberId,
         barberName: barber.name,
         date: dateString,

@@ -6,7 +6,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { formatDateForStorage, formatSlotDateTime, formatTime } from "@/lib/utils";
-import { useAuth } from "@clerk/nextjs";
+import { useAuth, useUser } from "@clerk/nextjs";
 import { useMutation, useQuery } from "convex/react";
 import { useParams, useRouter } from "next/navigation";
 import React, { useEffect, useState } from "react";
@@ -22,8 +22,7 @@ export default function BookPage() {
   const TEST_USER_ID = "test_user_id"; // For Phase 1 testing
 
   const { userId: currentUserId } = useAuth();
-
-
+  const { user } = useUser();
 
   // Cast the barberId string from params to a proper Convex ID type
   const barberIdAsId = barberId as unknown as Id<"barbers">;
@@ -152,6 +151,8 @@ export default function BookPage() {
         slotId: selectedSlot,
         userId: currentUserId, // Now guaranteed to be a string
         serviceName,
+        userName: user?.fullName || user?.firstName || undefined,
+        userEmail: user?.primaryEmailAddress?.emailAddress,
       });
       
       toast({
