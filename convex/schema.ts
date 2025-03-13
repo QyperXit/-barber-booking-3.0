@@ -14,14 +14,36 @@ export default defineSchema({
   
   slots: defineTable({
     barberId: v.id("barbers"),
-    date: v.number(), // Timestamp for the day
-    startTime: v.number(), // Minutes since midnight (e.g., 600 for 10:00 AM)
-    endTime: v.number(), // Minutes since midnight (e.g., 630 for 10:30 AM)
-    isBooked: v.boolean(),
-    price: v.number(),
-    lastUpdated: v.optional(v.number()), // Timestamp for when the slot was last updated
-  }).index("by_barber", ["barberId"])
-    .index("by_barber_date", ["barberId", "date"])
+    date: v.union(v.string(), v.number()), // Allow both string and number for dates
+    startTime: v.number(),
+    endTime: v.number(),
+    isAvailable: v.optional(v.boolean()), // Make isAvailable optional to work with existing data
+    isBooked: v.optional(v.boolean()),
+    price: v.optional(v.number()),
+    lastUpdated: v.optional(v.number()),
+  }).index("by_barber_date", ["barberId", "date"]),
+  
+  // New table for barber availability templates
+  barberAvailabilityTemplates: defineTable({
+    barberId: v.id("barbers"),
+    dayOfWeek: v.string(), // Monday, Tuesday, etc.
+    startTimes: v.array(v.number()), // Array of start times in minutes (e.g., 9*60 for 9:00 AM)
+    lastUpdated: v.number(),
+  }).index("by_barber_day", ["barberId", "dayOfWeek"]),
+  
+  appointments: defineTable({
+    userId: v.string(),
+    userName: v.string(),
+    barberId: v.id("barbers"),
+    barberName: v.string(),
+    date: v.string(),
+    startTime: v.number(),
+    endTime: v.number(),
+    services: v.array(v.string()),
+    status: v.string(),
+    createdAt: v.string(),
+  }).index("by_user", ["userId"])
+    .index("by_barber", ["barberId"])
     .index("by_date", ["date"]),
   
   bookings: defineTable({

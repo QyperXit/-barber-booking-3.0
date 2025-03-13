@@ -1,10 +1,16 @@
-import { auth, clerkClient } from "@clerk/nextjs/server";
+import { api } from "@/convex/_generated/api";
+import { auth, clerkClient, currentUser } from "@clerk/nextjs/server";
+import { ConvexHttpClient } from "convex/browser";
 import { NextResponse } from "next/server";
+
+// Initialize Convex client
+const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 
 export async function POST(request: Request) {
   try {
     // Check if the current user is an admin
-    const { userId: currentUserId } = auth();
+    const authResult = await auth();
+    const currentUserId = authResult.userId;
     
     if (!currentUserId) {
       return NextResponse.json(
@@ -14,8 +20,8 @@ export async function POST(request: Request) {
     }
     
     // Get the current user to check their role
-    const currentUser = await clerkClient.users.getUser(currentUserId);
-    const currentUserRole = currentUser.publicMetadata?.role as string | undefined;
+    const user = await currentUser();
+    const currentUserRole = user?.publicMetadata?.role as string | undefined;
     
     if (currentUserRole !== 'admin') {
       return NextResponse.json(
@@ -42,12 +48,37 @@ export async function POST(request: Request) {
       );
     }
     
+    // Get user details from Clerk to use for barber profile
+    const userDetails = await clerkClient.users.getUser(userId);
+    
     // Update the user's metadata
     await clerkClient.users.updateUser(userId, {
       publicMetadata: {
         role,
       },
     });
+    
+    // If the role is 'barber', automatically create a barber profile in Convex
+    if (role === 'barber') {
+      try {
+        // Get the user's name from Clerk
+        const firstName = userDetails.firstName || '';
+        const lastName = userDetails.lastName || '';
+        const fullName = `${firstName} ${lastName}`.trim() || 'New Barber';
+        
+        // Create a barber profile in Convex if it doesn't exist yet
+        const barberId = await convex.mutation(api.barbers.findOrCreate, {
+          userId: userId,
+          name: fullName,
+          description: `Professional barber services by ${fullName}`,
+        });
+        
+        console.log(`Barber profile with ID: ${barberId} for user: ${userId}`);
+      } catch (error) {
+        console.error("Error creating barber profile:", error);
+        // We'll still return success for role update, but log the error
+      }
+    }
     
     return NextResponse.json({ success: true });
   } catch (error) {

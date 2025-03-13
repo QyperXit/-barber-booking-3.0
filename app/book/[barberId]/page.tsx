@@ -1,11 +1,11 @@
 // app/book/[barberId]/page.tsx
 'use client';
 
-import { formatTime } from "@/components/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
+import { formatDateForStorage, formatSlotDateTime, formatTime } from "@/lib/utils";
 import { useAuth } from "@clerk/nextjs";
 import { useMutation, useQuery } from "convex/react";
 import { useParams, useRouter } from "next/navigation";
@@ -40,20 +40,57 @@ export default function BookPage() {
     date: selectedTimestamp
   });
   
-  const seedSlots = useMutation(api.slots.seedSlots);
+  const generateSlots = useMutation(api.slots.generateSlotsFromTemplate);
   const createBooking = useMutation(api.bookings.create);
   const forceRefresh = useMutation(api.slots.forceRefresh);
+  const seedSlots = useMutation(api.slots.seedSlots);
 
-  // For testing in Phase 1, create slots if none exist
+  // Generate slots for the selected date if none exist
   useEffect(() => {
     const initializeSlots = async () => {
       if (barberId && (!slots || slots.length === 0)) {
-        await seedSlots({ barberId: barberIdAsId });
+        try {
+          console.log('Trying to generate slots for:', selectedTimestamp, typeof selectedTimestamp);
+          
+          // Try to generate slots from template
+          const result = await generateSlots({ 
+            barberId: barberIdAsId, 
+            date: selectedTimestamp 
+          });
+          
+          console.log('Generate slots result:', result);
+          
+          if (result.status === "no_template") {
+            // If no template exists, create default slots for today
+            console.log('No template found, using seedSlots as fallback');
+            try {
+              const seedResult = await seedSlots({
+                barberId: barberIdAsId,
+                date: selectedTimestamp
+              });
+              console.log('Seed slots result:', seedResult);
+            } catch (seedError) {
+              console.error("Error seeding slots:", seedError);
+            }
+            
+            toast({
+              title: "Using default schedule",
+              description: "The barber has not set their availability for this day. Showing standard hours.",
+            });
+          }
+        } catch (error) {
+          console.error("Error generating slots:", error);
+          toast({
+            title: "Error",
+            description: "Failed to load available time slots.",
+            variant: "destructive",
+          });
+        }
       }
     };
     
     initializeSlots();
-  }, [barberId, slots, seedSlots, barberIdAsId]);
+  }, [barberId, slots, generateSlots, seedSlots, barberIdAsId, selectedTimestamp, toast]);
 
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newDate = new Date(e.target.value);

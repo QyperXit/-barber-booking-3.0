@@ -22,13 +22,15 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
-        <ConvexClientProvider>
+        <ClerkProvider>
+          <ConvexClientProvider>
             <Header />
             <main className="min-h-screen">
               {children}
             </main>
             <Toaster />
-        </ConvexClientProvider>
+          </ConvexClientProvider>
+        </ClerkProvider>
       </body>
     </html>
   );

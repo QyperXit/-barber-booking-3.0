@@ -13,9 +13,12 @@ import type {
   FilterApi,
   FunctionReference,
 } from "convex/server";
+import type * as appointments from "../appointments.js";
+import type * as availabilityTemplates from "../availabilityTemplates.js";
 import type * as barbers from "../barbers.js";
 import type * as bookings from "../bookings.js";
 import type * as constants from "../constants.js";
+import type * as crons from "../crons.js";
 import type * as slots from "../slots.js";
 
 /**
@@ -27,9 +30,12 @@ import type * as slots from "../slots.js";
  * ```
  */
 declare const fullApi: ApiFromModules<{
+  appointments: typeof appointments;
+  availabilityTemplates: typeof availabilityTemplates;
   barbers: typeof barbers;
   bookings: typeof bookings;
   constants: typeof constants;
+  crons: typeof crons;
   slots: typeof slots;
 }>;
 export declare const api: FilterApi<

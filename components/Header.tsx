@@ -10,12 +10,14 @@ export default function Header() {
   const { userId: currentUserId } = useAuth();
   const { user, isSignedIn } = useUser();
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isBarber, setIsBarber] = useState(false);
   
-  // Check if user has admin role from metadata
+  // Check if user has admin or barber role from metadata
   useEffect(() => {
     if (isSignedIn && user) {
       const userRole = user.publicMetadata?.role as string | undefined;
       setIsAdmin(userRole === 'admin');
+      setIsBarber(userRole === 'barber' || userRole === 'admin'); // Admins can do everything barbers can
     }
   }, [user, isSignedIn]);
 
@@ -26,6 +28,15 @@ export default function Header() {
         <div className="flex gap-4 items-center">
           <SignedIn>
             <Link href="/appointments">My Appointments</Link>
+            
+            {/* Barber-specific links */}
+            {isBarber && (
+              <Link href="/barbers/dashboard" className="text-green-500 hover:text-green-700">
+                Barber Dashboard
+              </Link>
+            )}
+            
+            {/* Admin-specific links */}
             {isAdmin && (
               <>
                 <Link href="/barbers/create" className="text-blue-500 hover:text-blue-700">

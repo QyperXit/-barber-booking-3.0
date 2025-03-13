@@ -1,8 +1,8 @@
 // middleware.ts
-import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
+import { authMiddleware } from '@clerk/nextjs';
 
 // Define public routes that do not require authentication
-const isPublicRoute = createRouteMatcher([
+const publicRoutes = [
   '/',
   '/sign-in',
   '/sign-in/(.*)',
@@ -10,23 +10,29 @@ const isPublicRoute = createRouteMatcher([
   '/sign-up/(.*)',
   '/api/clerk',
   '/api/clerk/(.*)'
-]);
+];
 
 // Define admin-only routes
-const isAdminRoute = createRouteMatcher([
+const adminRoutes = [
   '/barbers/create',
   '/barbers/create/(.*)',
   '/admin',
   '/admin/(.*)'
-]);
+];
 
-// Use clerkMiddleware to protect routes
-export default clerkMiddleware(async (auth, req) => {
-  if (!isPublicRoute(req)) {
-    // Protect non-public routes
-    await auth.protect();
-    
-    // For admin routes, we'll handle the protection in the page component
+export default authMiddleware({
+  publicRoutes,
+  afterAuth(auth, req, evt) {
+    // Handle authentication and redirects
+    const isPublic = publicRoutes.some(route => {
+      if (route.includes('*')) {
+        const baseRoute = route.replace('(.*)', '');
+        return req.nextUrl.pathname.startsWith(baseRoute);
+      }
+      return req.nextUrl.pathname === route;
+    });
+
+    // For admin routes, allow the actual pages to handle authorization
   }
 });
 

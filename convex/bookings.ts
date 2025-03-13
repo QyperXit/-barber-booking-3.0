@@ -1,5 +1,6 @@
 // convex/bookings.ts
 import { v } from "convex/values";
+import { formatDateForStorage } from "../lib/utils";
 import { mutation, query } from "./_generated/server";
 import { BOOKING_STATUS } from "./constants";
 
@@ -48,6 +49,30 @@ export const create = mutation({
       throw new Error("Slot is already booked");
     }
     
+    // Get the barber info
+    const barber = await ctx.db.get(slot.barberId);
+    if (!barber) {
+      throw new Error("Barber not found");
+    }
+
+    // Get the user info
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_user_id", q => q.eq("userId", userId))
+      .first();
+    
+    if (!user) {
+      console.warn("User not found, creating a basic user record");
+      // Create a basic user record if needed
+      await ctx.db.insert("users", {
+        name: "Customer",
+        email: "customer@example.com",
+        userId,
+      });
+    }
+    
+    const userName = user ? user.name : "Customer";
+    
     // Update the slot to be booked
     await ctx.db.patch(slotId, { 
       isBooked: true,
@@ -61,9 +86,33 @@ export const create = mutation({
       userId,
       bookedAt: Date.now(),
       status: BOOKING_STATUS.CONFIRMED,
-      amount: slot.price,
+      amount: slot.price ?? 0,
       serviceName,
     });
+    
+    // Use our helper function to ensure consistent date format
+    // Format the date as YYYY-MM-DD regardless of input format
+    const dateString = formatDateForStorage(slot.date);
+    
+    // Create a corresponding appointment
+    try {
+      await ctx.db.insert("appointments", {
+        userId,
+        userName,
+        barberId: slot.barberId,
+        barberName: barber.name,
+        date: dateString,
+        startTime: slot.startTime,
+        endTime: slot.endTime,
+        services: [serviceName],
+        status: "pending",
+        createdAt: new Date().toISOString(),
+      });
+      console.log("Created appointment for booking", bookingId, "with date", dateString);
+    } catch (error) {
+      console.error("Failed to create appointment:", error);
+      // We still return the booking ID even if appointment creation fails
+    }
     
     return bookingId;
   },
@@ -88,6 +137,35 @@ export const cancel = mutation({
       isBooked: false,
       lastUpdated: Date.now()
     });
+    
+    // Get the slot to find the appointment
+    const slot = await ctx.db.get(booking.slotId);
+    if (slot) {
+      // Find and update the corresponding appointment
+      try {
+        // Find appointments for this user and barber
+        const appointments = await ctx.db
+          .query("appointments")
+          .withIndex("by_barber", q => q.eq("barberId", booking.barberId))
+          .filter(q => q.eq(q.field("userId"), booking.userId))
+          .collect();
+        
+        // Find the specific appointment that matches this slot's time
+        const matchingAppointment = appointments.find(appointment => 
+          appointment.startTime === slot.startTime && 
+          appointment.status !== "cancelled"
+        );
+        
+        if (matchingAppointment) {
+          await ctx.db.patch(matchingAppointment._id, {
+            status: "cancelled"
+          });
+          console.log("Updated appointment status to cancelled", matchingAppointment._id);
+        }
+      } catch (error) {
+        console.error("Failed to update appointment status:", error);
+      }
+    }
     
     return bookingId;
   },

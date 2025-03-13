@@ -19,6 +19,16 @@ export const getById = query({
   },
 });
 
+export const getByUserId = query({
+  args: { userId: v.string() },
+  handler: async (ctx, { userId }) => {
+    return await ctx.db
+      .query("barbers")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .collect();
+  },
+});
+
 export const create = mutation({
   args: {
     name: v.string(),
@@ -34,6 +44,59 @@ export const create = mutation({
     });
     return barberId;
   },
+});
+
+export const update = mutation({
+  args: {
+    barberId: v.id("barbers"),
+    name: v.string(),
+    description: v.string(),
+  },
+  handler: async (ctx, { barberId, name, description }) => {
+    const barber = await ctx.db.get(barberId);
+    
+    if (!barber) {
+      throw new Error("Barber not found");
+    }
+    
+    await ctx.db.patch(barberId, {
+      name,
+      description,
+    });
+    
+    return await ctx.db.get(barberId);
+  },
+});
+
+// Find or create a barber profile for a user
+export const findOrCreate = mutation({
+  args: {
+    userId: v.string(),
+    name: v.string(),
+    description: v.optional(v.string()),
+  },
+  handler: async (ctx, { userId, name, description }) => {
+    // Check if a barber with this userId already exists
+    const existingBarber = await ctx.db
+      .query("barbers")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .first();
+    
+    if (existingBarber) {
+      // Already exists, just return the ID
+      return existingBarber._id;
+    }
+    
+    // Create a new barber profile
+    const barberId = await ctx.db.insert("barbers", {
+      name: name,
+      description: description || "Professional barber services",
+      userId: userId,
+      isActive: true,
+    });
+    
+    return barberId;
+  }
 });
 
 // For testing purposes in Phase 1, let's add a seed function to create some initial data
