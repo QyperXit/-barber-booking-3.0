@@ -1,5 +1,6 @@
 // middleware.ts
 import { authMiddleware } from '@clerk/nextjs';
+import { NextResponse } from 'next/server';
 
 // Define public routes that do not require authentication
 const publicRoutes = [
@@ -23,16 +24,19 @@ const adminRoutes = [
 export default authMiddleware({
   publicRoutes,
   afterAuth(auth, req, evt) {
-    // Handle authentication and redirects
-    const isPublic = publicRoutes.some(route => {
-      if (route.includes('*')) {
-        const baseRoute = route.replace('(.*)', '');
-        return req.nextUrl.pathname.startsWith(baseRoute);
-      }
-      return req.nextUrl.pathname === route;
-    });
-
-    // For admin routes, allow the actual pages to handle authorization
+    // If the user is logged in and trying to access the home page, redirect to dashboard
+    if (auth.userId && req.nextUrl.pathname === '/') {
+      // Check if the user is a barber (using type assertion for metadata)
+      const metadata = auth.sessionClaims?.metadata as { role?: string } || {};
+      const isBarber = metadata.role === 'barber';
+      
+      // Redirect to appropriate dashboard based on role
+      const redirectUrl = isBarber 
+        ? new URL('/barbers/dashboard', req.url)
+        : new URL('/appointments', req.url);
+        
+      return NextResponse.redirect(redirectUrl);
+    }
   }
 });
 
