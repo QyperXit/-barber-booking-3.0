@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { BOOKING_STATUS } from "./constants";
 
 export const getAll = query({
   args: {},
@@ -78,6 +79,48 @@ export const updateStatus = mutation({
     }
     
     await ctx.db.patch(id, { status });
+    
+    // If the appointment is being cancelled, we need to update the associated booking and slot
+    if (status === "cancelled") {
+      try {
+        // Find the corresponding booking using the appointment details
+        const bookings = await ctx.db
+          .query("bookings")
+          .withIndex("by_barber", q => q.eq("barberId", appointment.barberId))
+          .filter(q => 
+            q.eq(q.field("userId"), appointment.userId) && 
+            q.neq(q.field("status"), "cancelled")
+          )
+          .collect();
+        
+        // Find the booking that matches this appointment's time
+        // This is an approximation as we don't have a direct appointment->booking relationship
+        for (const booking of bookings) {
+          // Get the slot to check time
+          const slot = await ctx.db.get(booking.slotId);
+          if (slot && slot.startTime === appointment.startTime) {
+            // This is likely the matching booking
+            console.log("Found matching booking to cancel", booking._id);
+            
+            // Update the booking status
+            await ctx.db.patch(booking._id, { 
+              status: BOOKING_STATUS.CANCELLED 
+            });
+            
+            // Update the slot to be available again
+            await ctx.db.patch(booking.slotId, { 
+              isBooked: false,
+              lastUpdated: Date.now()
+            });
+            
+            break;
+          }
+        }
+      } catch (error) {
+        console.error("Error updating associated booking:", error);
+        // We still want to update the appointment status even if booking update fails
+      }
+    }
     
     return await ctx.db.get(id);
   },
