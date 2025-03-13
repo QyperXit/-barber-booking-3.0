@@ -36,6 +36,28 @@ const weekdays = [
   'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'
 ];
 
+// Helper function to get the next occurrence of a specific day
+const getNextDayOccurrence = (dayName: string): Date => {
+  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const today = new Date();
+  const dayIndex = days.indexOf(dayName);
+  const todayIndex = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
+  
+  let daysUntilNext = dayIndex - todayIndex;
+  if (daysUntilNext <= 0) {
+    daysUntilNext += 7; // Wrap around to next week
+  }
+  
+  const nextOccurrence = new Date(today);
+  nextOccurrence.setDate(today.getDate() + daysUntilNext);
+  return nextOccurrence;
+};
+
+// Format a date as "Day DD" (e.g., "Mon 15")
+const formatDayDate = (date: Date): string => {
+  return `${date.getDate()}`;
+};
+
 export function Availability({ barberId }: AvailabilityProps) {
   const { toast } = useToast();
   const [selectedDay, setSelectedDay] = useState<string>('Monday');
@@ -145,35 +167,6 @@ export function Availability({ barberId }: AvailabilityProps) {
     }
   };
 
-  const saveAllTemplates = async () => {
-    try {
-      const templates = weekdays.map(day => ({
-        dayOfWeek: day,
-        startTimes: selectedSlots[day]
-      }));
-
-      await saveTemplates({
-        barberId,
-        templates
-      });
-
-      toast({
-        title: "All availability templates saved",
-        description: "Your weekly availability has been updated.",
-      });
-      
-      // Run the cleanup to remove any unused slots
-      await cleanupSlots({ retentionDays: 30 });
-    } catch (error) {
-      console.error("Error saving availability templates:", error);
-      toast({
-        title: "Error",
-        description: "Failed to save your availability templates. Please try again.",
-        variant: "destructive",
-      });
-    }
-  };
-
   return (
     <Card className="w-full">
       <CardHeader>
@@ -185,32 +178,36 @@ export function Availability({ barberId }: AvailabilityProps) {
       <CardContent>
         <div className="flex flex-col space-y-4">
           <div className="flex space-x-2 overflow-x-auto pb-2">
-            {weekdays.map(day => (
-              <Button
-                key={day}
-                variant={selectedDay === day ? "default" : "outline"}
-                onClick={() => setSelectedDay(day)}
-                className="whitespace-nowrap"
-              >
-                {day}
-              </Button>
-            ))}
+            {weekdays.map(day => {
+              const nextDate = getNextDayOccurrence(day);
+              const formattedDate = formatDayDate(nextDate);
+              return (
+                <Button
+                  key={day}
+                  variant={selectedDay === day ? "default" : "outline"}
+                  onClick={() => setSelectedDay(day)}
+                  className="whitespace-nowrap"
+                >
+                  {day} <span className="ml-1 text-xs opacity-80">{formattedDate}</span>
+                </Button>
+              );
+            })}
           </div>
           
           <div className="flex flex-wrap gap-2 mt-2 mb-4">
             <Button 
-              variant="secondary" 
+              variant="default"
               onClick={selectAllSlots}
-              className="text-sm"
+              className="text-sm bg-green-600 hover:bg-green-700"
             >
-              Select All
+              Select All Slots
             </Button>
             <Button 
-              variant="secondary" 
+              variant="outline" 
               onClick={deselectAllSlots}
-              className="text-sm"
+              className="text-sm border-red-500 text-red-500 hover:bg-red-50 hover:text-red-600"
             >
-              Deselect All
+              Clear All Slots
             </Button>
           </div>
           
@@ -228,17 +225,9 @@ export function Availability({ barberId }: AvailabilityProps) {
           </div>
         </div>
       </CardContent>
-      <CardFooter className="flex flex-col space-y-2 sm:flex-row sm:justify-between sm:space-y-0 sm:space-x-2">
-        <div className="flex space-x-2 w-full sm:w-auto">
-          <Button variant="outline" onClick={() => setSelectedSlots(prev => ({...prev, [selectedDay]: []}))}>
-            Clear {selectedDay}
-          </Button>
-          <Button onClick={saveCurrentDayTemplate}>
-            Save {selectedDay}
-          </Button>
-        </div>
-        <Button onClick={saveAllTemplates}>
-          Save All Days
+      <CardFooter className="flex justify-end">
+        <Button onClick={saveCurrentDayTemplate}>
+          Save {selectedDay}
         </Button>
       </CardFooter>
     </Card>
