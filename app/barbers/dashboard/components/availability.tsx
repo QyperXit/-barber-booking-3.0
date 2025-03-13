@@ -94,6 +94,32 @@ export function Availability({ barberId }: AvailabilityProps) {
     });
   };
 
+  // New function to select all slots for the current day
+  const selectAllSlots = () => {
+    setSelectedSlots(prev => ({
+      ...prev,
+      [selectedDay]: timeSlots.map(slot => slot.value).sort((a, b) => a - b)
+    }));
+    
+    toast({
+      title: "All slots selected",
+      description: `All time slots for ${selectedDay} have been selected.`,
+    });
+  };
+
+  // New function to deselect all slots for the current day
+  const deselectAllSlots = () => {
+    setSelectedSlots(prev => ({
+      ...prev,
+      [selectedDay]: []
+    }));
+    
+    toast({
+      title: "All slots deselected",
+      description: `All time slots for ${selectedDay} have been deselected.`,
+    });
+  };
+
   const saveCurrentDayTemplate = async () => {
     try {
       await saveTemplate({
@@ -169,6 +195,23 @@ export function Availability({ barberId }: AvailabilityProps) {
                 {day}
               </Button>
             ))}
+          </div>
+          
+          <div className="flex flex-wrap gap-2 mt-2 mb-4">
+            <Button 
+              variant="secondary" 
+              onClick={selectAllSlots}
+              className="text-sm"
+            >
+              Select All
+            </Button>
+            <Button 
+              variant="secondary" 
+              onClick={deselectAllSlots}
+              className="text-sm"
+            >
+              Deselect All
+            </Button>
           </div>
           
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 mt-4">
