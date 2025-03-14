@@ -34,11 +34,63 @@ export default function BookPage() {
   // Get the timestamp for the selected date (midnight)
   const selectedTimestamp = selectedDate.setHours(0, 0, 0, 0);
   
+  // Get all slots for the selected date
   const slots = useQuery(api.slots.getByBarberAndDate, {
     barberId: barberIdAsId,
     date: selectedTimestamp
   });
   
+  // UPDATED APPROACH - Process slots more carefully
+  const availableSlots = React.useMemo(() => {
+    // No slots available yet
+    if (!slots || slots.length === 0) return { available: [], booked: [] };
+    
+    // Get current date info
+    const now = new Date();
+    const currentTime = now.getHours() * 60 + now.getMinutes();
+    
+    // Check if selected date is today
+    const currentDate = new Date();
+    currentDate.setHours(0, 0, 0, 0);
+    const isToday = currentDate.getTime() === selectedTimestamp;
+    
+    console.log('DEBUG INFO:');
+    console.log('Current time (minutes):', currentTime);
+    console.log('Selected date is today:', isToday);
+    console.log('Total slots found:', slots.length);
+    console.log('First few slots:', slots.slice(0, 3));
+    
+    // Sort slots by start time
+    const sortedSlots = [...slots].sort((a, b) => a.startTime - b.startTime);
+    
+    // Separate booked and available slots
+    const bookedSlots: typeof slots = [];
+    const availableSlots: typeof slots = [];
+    
+    sortedSlots.forEach(slot => {
+      // For today, filter out past times for available slots
+      if (isToday && !slot.isBooked && slot.startTime <= currentTime) {
+        console.log(`Skipping past slot at ${formatTime(slot.startTime)}`);
+        return; // Skip this slot
+      }
+      
+      if (slot.isBooked) {
+        bookedSlots.push(slot);
+      } else {
+        availableSlots.push(slot);
+      }
+    });
+    
+    console.log('Available slots:', availableSlots.length);
+    console.log('Booked slots:', bookedSlots.length);
+    
+    return { 
+      available: availableSlots, 
+      booked: bookedSlots,
+      all: sortedSlots
+    };
+  }, [slots, selectedTimestamp]);
+
   const generateSlots = useMutation(api.slots.generateSlotsFromTemplate);
   const createBooking = useMutation(api.bookings.create);
   const forceRefresh = useMutation(api.slots.forceRefresh);
@@ -223,48 +275,73 @@ export default function BookPage() {
       </div>
       
       {slots && slots.length > 0 ? (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          {slots.map((slot) => (
-            <div 
-              key={slot._id}
-              className={`relative rounded-xl transition-all duration-200 ${
-                slot.isBooked 
-                  ? 'bg-neutral-100 border border-neutral-200' 
-                  : slot._id === selectedSlot 
-                    ? 'bg-white border-2 border-gray-700 shadow-lg scale-[1.02]' 
-                    : 'bg-gray-600 hover:bg-gray-700'
-              }`}
-            >
-              <button
-                className={`w-full p-4 cursor-pointer flex flex-col items-center justify-center gap-2 ${
-                  slot.isBooked 
-                    ? 'cursor-not-allowed' 
-                    : 'hover:scale-[0.98] active:scale-[0.97] transition-transform'
-                }`}
-                onClick={() => !slot.isBooked && setSelectedSlot(slot._id)}
-                disabled={slot.isBooked}
-              >
-                <span className={`text-sm font-medium ${
-                  slot.isBooked 
-                    ? 'text-neutral-600' 
-                    : slot._id === selectedSlot
-                      ? 'text-gray-700'
-                      : 'text-white'
-                }`}>
-                  {formatTime(slot.startTime)} - {formatTime(slot.endTime)}
-                </span>
-                {slot.isBooked && (
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-neutral-200 text-neutral-700">
-                    <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                    </svg>
-                    Unavailable
-                  </span>
-                )}
-              </button>
+        <>
+          {/* First show available slots */}
+          {availableSlots.available && availableSlots.available.length > 0 ? (
+            <>
+              <h3 className="text-lg font-medium text-gray-200 mb-3">Available Slots</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                {availableSlots.available.map((slot) => (
+                  <div 
+                    key={slot._id}
+                    className={`relative rounded-xl transition-all duration-200 ${
+                      slot._id === selectedSlot 
+                        ? 'bg-white border-2 border-gray-700 shadow-lg scale-[1.02]' 
+                        : 'bg-gray-600 hover:bg-gray-700'
+                    }`}
+                  >
+                    <button
+                      className="w-full p-4 cursor-pointer flex flex-col items-center justify-center gap-2 hover:scale-[0.98] active:scale-[0.97] transition-transform"
+                      onClick={() => setSelectedSlot(slot._id)}
+                    >
+                      <span className={`text-sm font-medium ${
+                        slot._id === selectedSlot
+                          ? 'text-gray-700'
+                          : 'text-white'
+                      }`}>
+                        {formatTime(slot.startTime)} - {formatTime(slot.endTime)}
+                      </span>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="bg-gray-700 rounded-lg p-4 mb-6 text-center">
+              <p className="text-white">No available slots for this date</p>
             </div>
-          ))}
-        </div>
+          )}
+          
+          {/* Then show booked slots */}
+          {availableSlots.booked && availableSlots.booked.length > 0 && (
+            <>
+              <h3 className="text-lg font-medium text-gray-200 mb-3">Already Booked</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                {availableSlots.booked.map((slot) => (
+                  <div 
+                    key={slot._id}
+                    className="relative rounded-xl transition-all duration-200 bg-neutral-100 border border-neutral-200"
+                  >
+                    <button
+                      className="w-full p-4 cursor-not-allowed flex flex-col items-center justify-center gap-2"
+                      disabled
+                    >
+                      <span className="text-sm font-medium text-neutral-600">
+                        {formatTime(slot.startTime)} - {formatTime(slot.endTime)}
+                      </span>
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-neutral-200 text-neutral-700">
+                        <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                        </svg>
+                        Unavailable
+                      </span>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </>
       ) : (
         <div className="text-center py-12">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
