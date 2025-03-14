@@ -19,6 +19,7 @@
 
 # production
 /build
+/browser-tools-mcp
 
 # misc
 .DS_Store
