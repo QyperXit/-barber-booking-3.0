@@ -44,18 +44,22 @@ const getNextDayOccurrence = (dayName: string): Date => {
   const todayIndex = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
   
   let daysUntilNext = dayIndex - todayIndex;
-  if (daysUntilNext <= 0) {
+  
+  // If it's today or in the past, add 7 days to go to next week
+  // EXCEPT if it's today - we want to include today
+  if (daysUntilNext < 0) {
     daysUntilNext += 7; // Wrap around to next week
   }
+  // If it's today (daysUntilNext == 0), keep it as today
   
   const nextOccurrence = new Date(today);
   nextOccurrence.setDate(today.getDate() + daysUntilNext);
   return nextOccurrence;
 };
 
-// Format a date as "Day DD" (e.g., "Mon 15")
+// Format a date as "DD/MM" (e.g., "15/07")
 const formatDayDate = (date: Date): string => {
-  return `${date.getDate()}`;
+  return `${date.getDate()}/${date.getMonth() + 1}`;
 };
 
 export function Availability({ barberId }: AvailabilityProps) {
@@ -181,14 +185,18 @@ export function Availability({ barberId }: AvailabilityProps) {
             {weekdays.map(day => {
               const nextDate = getNextDayOccurrence(day);
               const formattedDate = formatDayDate(nextDate);
+              const isToday = new Date().getDate() === nextDate.getDate() && 
+                              new Date().getMonth() === nextDate.getMonth() &&
+                              new Date().getFullYear() === nextDate.getFullYear();
+              
               return (
                 <Button
                   key={day}
                   variant={selectedDay === day ? "default" : "outline"}
                   onClick={() => setSelectedDay(day)}
-                  className="whitespace-nowrap"
+                  className={`whitespace-nowrap ${isToday ? "border-green-500" : ""}`}
                 >
-                  {day} <span className="ml-1 text-xs opacity-80">{formattedDate}</span>
+                  {day} <span className="ml-1 text-xs opacity-80">{formattedDate}{isToday ? " (Today)" : ""}</span>
                 </Button>
               );
             })}
