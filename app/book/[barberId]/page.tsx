@@ -261,6 +261,24 @@ export default function BookPage() {
       
       console.log(`Attempting to refresh slots for date: ${new Date(selectedTimestamp).toISOString().split('T')[0]}`);
       
+      // Get the day of week for the selected date
+      const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+      const dayOfWeek = days[new Date(selectedTimestamp).getDay()];
+      console.log(`Selected day of week: ${dayOfWeek}`);
+      
+      // First try to get and apply template for this day to ensure we have latest changes
+      try {
+        const result = await generateSlots({ 
+          barberId: barberIdAsId, 
+          date: selectedTimestamp 
+        });
+        
+        console.log('Generate slots result:', result);
+      } catch (genError) {
+        console.error("Error generating slots from template:", genError);
+      }
+      
+      // Now run the regular refresh
       const result = await forceRefresh({
         barberId: barberIdAsId,
         date: selectedTimestamp

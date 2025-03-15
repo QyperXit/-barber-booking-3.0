@@ -1,6 +1,8 @@
 // convex/slots.ts
 import { v } from "convex/values";
 import { formatDateForStorage } from "../lib/utils";
+import { api } from "./_generated/api";
+import { Id } from "./_generated/dataModel";
 import { mutation, query } from "./_generated/server";
 import { CLOSING_TIME, OPENING_TIME, SLOT_DURATION } from "./constants";
 
@@ -483,12 +485,15 @@ export const updateAvailability = mutation({
       
       // Convert Set to Array before iteration to avoid TypeScript downlevelIteration errors
       for (const time of Array.from(timesToCreate)) {
+        // Explicitly type the time as number to fix TypeScript errors
+        const timeValue: number = time;
+        
         // Create slot with string date format
         const stringSlotId = await ctx.db.insert("slots", {
           barberId,
           date: formattedDateString,
-          startTime: time,
-          endTime: time + 30,
+          startTime: timeValue,
+          endTime: timeValue + 30,
           isAvailable: true, // These should always be available
           isBooked: false,
           price: 25, // Default price
@@ -499,15 +504,15 @@ export const updateAvailability = mutation({
         const timestampSlotId = await ctx.db.insert("slots", {
           barberId,
           date: formattedDateTimestamp,
-          startTime: time,
-          endTime: time + 30,
+          startTime: timeValue,
+          endTime: timeValue + 30,
           isAvailable: true, // These should always be available
           isBooked: false,
           price: 25, // Default price
           lastUpdated: Date.now()
         });
         
-        console.log(`Created new available slots for ${formatTime(time)} with IDs ${stringSlotId} and ${timestampSlotId}`);
+        console.log(`Created new available slots for ${formatTime(timeValue)} with IDs ${stringSlotId} and ${timestampSlotId}`);
       }
       
       console.log(`==== Completed availability update for ${dayOfWeek} ====\n`);
@@ -749,6 +754,262 @@ export const cleanupUnusedSlots = mutation({
       message: `Deleted ${deletedCount} unused slots`,
       pastCutoff: pastCutoffDateStr,
       futureCutoff: futureCutoffDateStr
+    };
+  }
+});
+
+// Update slots based on saved templates for a specific day
+export const updateSlotsFromTemplates = mutation({
+  args: {
+    barberId: v.id("barbers"),
+    dayOfWeek: v.string()
+  },
+  handler: async (ctx, { barberId, dayOfWeek }) => {
+    console.log(`Updating slots from templates for barber ${barberId} and day ${dayOfWeek}`);
+    
+    // Get the template for this day of week
+    const template = await ctx.db
+      .query("barberAvailabilityTemplates")
+      .withIndex("by_barber_day", (q) => 
+        q.eq("barberId", barberId).eq("dayOfWeek", dayOfWeek)
+      )
+      .first();
+    
+    if (!template) {
+      console.log(`No template found for ${dayOfWeek}, cannot update slots`);
+      return { success: false, reason: "no_template" };
+    }
+    
+    // Convert the template to the format expected by updateAvailability
+    const availability = [
+      {
+        day: dayOfWeek,
+        times: template.startTimes
+      }
+    ];
+    
+    // Call updateAvailability to update the slots
+    console.log(`Found template for ${dayOfWeek} with ${template.startTimes.length} slots, updating availability...`);
+    
+    // Implement the same logic as updateAvailability but for a single day
+    // This avoids needing to call the handler directly
+    const dates = getNextWeeksDates(4);
+    let updatedSlots = 0;
+    
+    // For each date, check if it falls on the specified day of week
+    for (const dateObj of dates) {
+      const dayOfWeekForDate = getDayOfWeek(dateObj.date);
+      
+      // Only process dates that match our target day of week
+      if (dayOfWeekForDate !== dayOfWeek) continue;
+      
+      console.log(`Processing ${dayOfWeek} date: ${dateObj.formatted}`);
+      
+      // Use the code from updateAvailability for a single date
+      const formattedDateString = dateObj.formatted; // YYYY-MM-DD format
+      const formattedDateTimestamp = String(dateObj.date.getTime()); // Timestamp as string
+      
+      // Get existing slots with string formatted date
+      const existingStringSlots = await ctx.db
+        .query("slots")
+        .withIndex("by_barber_date", (q) => 
+          q.eq("barberId", barberId).eq("date", formattedDateString)
+        )
+        .collect();
+      
+      // Get existing slots with timestamp format
+      const existingTimestampSlots = await ctx.db
+        .query("slots")
+        .withIndex("by_barber_date", (q) => 
+          q.eq("barberId", barberId).eq("date", formattedDateTimestamp)
+        )
+        .collect();
+      
+      // Combine both sets of slots
+      const existingSlots = [...existingStringSlots, ...existingTimestampSlots];
+      
+      // Step 1: Find all booked slots
+      const bookedSlots = existingSlots.filter(slot => slot.isBooked);
+      
+      // Group booked slots by time for easier lookup
+      const bookedSlotsByTime = new Map();
+      bookedSlots.forEach(slot => {
+        const key = String(slot.startTime);
+        if (!bookedSlotsByTime.has(key)) {
+          bookedSlotsByTime.set(key, []);
+        }
+        bookedSlotsByTime.get(key).push(slot);
+      });
+      
+      // Step 2: Get the times from the template
+      const selectedTimes = new Set(template.startTimes);
+      
+      // Step 3: Determine final availability (including booked slots)
+      const finalAvailability = new Set<number>(selectedTimes);
+      
+      // Add all booked times to ensure they remain available
+      bookedSlots.forEach(slot => {
+        if (!finalAvailability.has(slot.startTime)) {
+          console.log(`Adding booked time ${formatTime(slot.startTime)} to availability (not in template)`);
+          finalAvailability.add(slot.startTime);
+        }
+      });
+      
+      // Continue with the updateAvailability logic...
+      // ... (handling existing slots and creating new ones)
+      
+      // Track which slots we've already processed
+      const handledSlotIds = new Set();
+      const timesToCreate = new Set<number>();
+      
+      // Add all final available times to the creation set initially
+      finalAvailability.forEach(time => {
+        timesToCreate.add(time);
+      });
+      
+      // First, handle booked slots - we always preserve these
+      for (const slot of bookedSlots) {
+        // This slot should remain booked and available
+        console.log(`Preserving booked slot ${slot._id} for time ${formatTime(slot.startTime)}`);
+        
+        // Make sure isAvailable is set correctly
+        if (!slot.isAvailable) {
+          console.log(`Fixing isAvailable flag on booked slot ${slot._id}`);
+          await ctx.db.patch(slot._id, { 
+            isAvailable: true,
+            lastUpdated: Date.now()
+          });
+        }
+        
+        handledSlotIds.add(slot._id);
+        
+        // We've handled this time slot, remove it from the creation list
+        timesToCreate.delete(slot.startTime);
+      }
+      
+      // Now handle non-booked slots - either mark as available or unavailable
+      for (const slot of existingSlots) {
+        if (!slot.isBooked && !handledSlotIds.has(slot._id)) {
+          const isInFinalAvailability = finalAvailability.has(slot.startTime);
+          
+          if (isInFinalAvailability) {
+            // This slot should be available
+            console.log(`Marking slot ${slot._id} for time ${formatTime(slot.startTime)} as available`);
+            await ctx.db.patch(slot._id, {
+              isAvailable: true,
+              lastUpdated: Date.now()
+            });
+            
+            // Remove from creation list since we're keeping this slot
+            timesToCreate.delete(slot.startTime);
+          } else {
+            // This slot should be marked as unavailable instead of deleted
+            console.log(`Marking slot ${slot._id} for time ${formatTime(slot.startTime)} as unavailable`);
+            await ctx.db.patch(slot._id, {
+              isAvailable: false,
+              lastUpdated: Date.now()
+            });
+          }
+          
+          handledSlotIds.add(slot._id);
+        }
+      }
+      
+      // Step 5: Create new slots for any times that should be available but don't have slots yet
+      console.log(`Creating ${timesToCreate.size} new available slots`);
+      
+      // Convert Set to Array before iteration to avoid TypeScript errors
+      for (const time of Array.from(timesToCreate)) {
+        // Explicitly type the time as number
+        const timeValue: number = time;
+        
+        // Create slot with string date format
+        const stringSlotId = await ctx.db.insert("slots", {
+          barberId,
+          date: formattedDateString,
+          startTime: timeValue,
+          endTime: timeValue + 30,
+          isAvailable: true, // These should always be available
+          isBooked: false,
+          price: 25, // Default price
+          lastUpdated: Date.now()
+        });
+        
+        // Create slot with timestamp date format
+        const timestampSlotId = await ctx.db.insert("slots", {
+          barberId,
+          date: formattedDateTimestamp,
+          startTime: timeValue,
+          endTime: timeValue + 30,
+          isAvailable: true, // These should always be available
+          isBooked: false,
+          price: 25, // Default price
+          lastUpdated: Date.now()
+        });
+        
+        updatedSlots += 2; // Count both formats
+      }
+    }
+    
+    return { 
+      success: true, 
+      updatedDay: dayOfWeek,
+      updatedSlots
+    };
+  }
+});
+
+// This function will be called when a template is updated
+// It will update the slots for the next 4 weeks for the given day of week
+export const updateSlotsFromTemplate = mutation({
+  args: { 
+    barberId: v.id("barbers"),
+    dayOfWeek: v.string()
+  },
+  handler: async (ctx, args) => {
+    const { barberId, dayOfWeek } = args;
+    
+    console.log(`Updating slots for barber ${barberId} on ${dayOfWeek}`);
+    
+    // Get the template for this day
+    const template = await ctx.db
+      .query("barberAvailabilityTemplates")
+      .withIndex("by_barber_day", (q) => 
+        q.eq("barberId", barberId).eq("dayOfWeek", dayOfWeek)
+      )
+      .first();
+    
+    if (!template) {
+      console.log(`No template found for ${dayOfWeek}`);
+      return { status: "no_template" };
+    }
+    
+    console.log(`Found template with ${template.startTimes.length} time slots`);
+    
+    // Convert the template to the format expected by updateAvailability
+    const availability = [{
+      day: dayOfWeek,
+      times: template.startTimes
+    }];
+    
+    // Get dates for the next 4 weeks that match this day of week
+    const dates = getNextWeeksDates(4).filter(dateObj => {
+      const day = getDayOfWeek(dateObj.date);
+      return day === dayOfWeek;
+    });
+    
+    console.log(`Found ${dates.length} dates in the next 4 weeks that match ${dayOfWeek}`);
+    
+    // Update availability for these dates
+    const result = await ctx.runMutation(api.slots.updateAvailability, {
+      barberId,
+      availability
+    });
+    
+    return {
+      status: "updated",
+      dates: dates.map(d => d.formatted),
+      template: template
     };
   }
 });
