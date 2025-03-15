@@ -1,3 +1,18 @@
+# Barber Booking Application
+
+A modern web application that allows customers to book appointments with barbers and lets barbers manage their availability and appointments.
+
+## Features
+
+- **Customer Booking**: Users can browse available barbers, select dates, and book available time slots
+- **Barber Dashboard**: Barbers can set their availability, view upcoming appointments, and manage their schedule
+- **Real-time Updates**: All changes to availability and bookings are reflected in real-time
+- **Responsive UI**: Works on mobile and desktop devices
+
+For detailed documentation, see [PROJECT_REFERENCE.md](./PROJECT_REFERENCE.md).
+
+---
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started

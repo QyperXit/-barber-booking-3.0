@@ -57,6 +57,14 @@ const getNextDayOccurrence = (dayName: string): Date => {
   return nextOccurrence;
 };
 
+// Format a date as YYYY-MM-DD
+const formatDatabaseDate = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 // Format a date as "DD/MM" (e.g., "15/07")
 const formatDayDate = (date: Date): string => {
   return `${date.getDate()}/${date.getMonth() + 1}`;
@@ -75,8 +83,29 @@ export function Availability({ barberId }: AvailabilityProps) {
     Sunday: []
   });
   
+  // Track booked slots for each day
+  const [bookedSlots, setBookedSlots] = useState<{[key: string]: number[]}>({
+    Monday: [],
+    Tuesday: [],
+    Wednesday: [],
+    Thursday: [],
+    Friday: [],
+    Saturday: [],
+    Sunday: []
+  });
+  
+  // Calculate date for the selected day
+  const selectedDate = getNextDayOccurrence(selectedDay);
+  const formattedSelectedDate = formatDatabaseDate(selectedDate);
+  
   // Get existing templates
   const templates = useQuery(api.availabilityTemplates.getByBarber, { barberId });
+  
+  // Get existing slots for the selected day
+  const slots = useQuery(api.slots.getByBarberAndDate, { 
+    barberId, 
+    date: formattedSelectedDate 
+  });
   
   // Save template mutation
   const saveTemplate = useMutation(api.availabilityTemplates.saveTemplate);
@@ -99,8 +128,66 @@ export function Availability({ barberId }: AvailabilityProps) {
       setSelectedSlots(newSelectedSlots);
     }
   }, [templates]);
+  
+  // Load booked slots for the selected day
+  useEffect(() => {
+    if (slots && selectedDay) {
+      // Log the slots for debugging
+      console.log(`Got ${slots.length} slots for ${selectedDay}:`, slots);
+      
+      // Filter for booked slots
+      const bookedTimesForSelectedDay = slots
+        .filter(slot => {
+          const isBooked = slot.isBooked;
+          if (isBooked) {
+            console.log(`Found booked slot for ${formatTime(slot.startTime)}`);
+          }
+          return isBooked;
+        })
+        .map(slot => slot.startTime);
+      
+      console.log(`Found ${bookedTimesForSelectedDay.length} booked slots for ${selectedDay}`);
+      
+      setBookedSlots(prev => ({
+        ...prev,
+        [selectedDay]: bookedTimesForSelectedDay
+      }));
+      
+      // Make sure booked slots are also in the selected slots
+      setSelectedSlots(prev => {
+        const currentDaySlots = [...(prev[selectedDay] || [])];
+        
+        // Add any booked slots that aren't already selected
+        let updatedSlots = [...currentDaySlots];
+        
+        bookedTimesForSelectedDay.forEach(time => {
+          if (!updatedSlots.includes(time)) {
+            updatedSlots.push(time);
+          }
+        });
+        
+        // Sort the slots
+        updatedSlots.sort((a, b) => a - b);
+        
+        return {
+          ...prev,
+          [selectedDay]: updatedSlots
+        };
+      });
+    }
+  }, [slots, selectedDay]);
 
   const handleSlotToggle = (time: number) => {
+    // Don't allow toggling of booked slots
+    if (bookedSlots[selectedDay]?.includes(time)) {
+      toast({
+        title: "Slot is booked",
+        description: "You cannot remove a time slot that has an active booking.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     setSelectedSlots(prev => {
       const currentDaySlots = [...(prev[selectedDay] || [])];
       
@@ -135,24 +222,61 @@ export function Availability({ barberId }: AvailabilityProps) {
 
   // New function to deselect all slots for the current day
   const deselectAllSlots = () => {
+    // Preserve booked slots when deselecting
+    const bookedSlotsForDay = bookedSlots[selectedDay] || [];
+    
+    console.log(`Clearing available slots for ${selectedDay} but preserving ${bookedSlotsForDay.length} booked slots`);
+    
+    if (bookedSlotsForDay.length > 0) {
+      bookedSlotsForDay.forEach(time => {
+        console.log(`Preserving booked slot at ${formatTime(time)}`);
+      });
+    }
+    
     setSelectedSlots(prev => ({
       ...prev,
-      [selectedDay]: []
+      [selectedDay]: bookedSlotsForDay
     }));
     
     toast({
-      title: "All slots deselected",
-      description: `All time slots for ${selectedDay} have been deselected.`,
+      title: "Available slots cleared",
+      description: bookedSlotsForDay.length > 0 
+        ? `Available time slots for ${selectedDay} have been cleared. ${bookedSlotsForDay.length} booked slots are preserved.`
+        : `Available time slots for ${selectedDay} have been cleared.`,
     });
   };
 
   const saveCurrentDayTemplate = async () => {
     try {
+      // Ensure all booked slots are included in the template
+      const bookedSlotsForDay = bookedSlots[selectedDay] || [];
+      let timesToSave = [...selectedSlots[selectedDay]];
+      
+      // Add any booked slots that might be missing
+      bookedSlotsForDay.forEach(time => {
+        if (!timesToSave.includes(time)) {
+          console.log(`Adding missing booked slot for ${formatTime(time)} to template`);
+          timesToSave.push(time);
+        }
+      });
+      
+      // Sort times
+      timesToSave.sort((a, b) => a - b);
+      
+      console.log(`Saving template for ${selectedDay} with ${timesToSave.length} slots (including ${bookedSlotsForDay.length} booked slots)`);
+      
+      // First save the template
       await saveTemplate({
         barberId,
         dayOfWeek: selectedDay,
-        startTimes: selectedSlots[selectedDay]
+        startTimes: timesToSave
       });
+
+      // Update our local state to reflect what was actually saved
+      setSelectedSlots(prev => ({
+        ...prev,
+        [selectedDay]: timesToSave
+      }));
 
       toast({
         title: "Availability template saved",
@@ -169,6 +293,21 @@ export function Availability({ barberId }: AvailabilityProps) {
         variant: "destructive",
       });
     }
+  };
+
+  // Check if a slot is booked
+  const isSlotBooked = (time: number) => {
+    return bookedSlots[selectedDay]?.includes(time) || false;
+  };
+
+  // Format time from minutes (e.g., 570) to "9:30 AM"
+  const formatTime = (minutes: number): string => {
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    const formattedHours = hours % 12 || 12;
+    const formattedMins = mins.toString().padStart(2, '0');
+    return `${formattedHours}:${formattedMins} ${ampm}`;
   };
 
   return (
@@ -189,6 +328,9 @@ export function Availability({ barberId }: AvailabilityProps) {
                               new Date().getMonth() === nextDate.getMonth() &&
                               new Date().getFullYear() === nextDate.getFullYear();
               
+              // Show the number of booked slots for each day
+              const bookedCount = bookedSlots[day]?.length || 0;
+              
               return (
                 <Button
                   key={day}
@@ -196,7 +338,11 @@ export function Availability({ barberId }: AvailabilityProps) {
                   onClick={() => setSelectedDay(day)}
                   className={`whitespace-nowrap ${isToday ? "border-green-500" : ""}`}
                 >
-                  {day} <span className="ml-1 text-xs opacity-80">{formattedDate}{isToday ? " (Today)" : ""}</span>
+                  {day} 
+                  <span className="ml-1 text-xs opacity-80">
+                    {formattedDate}{isToday ? " (Today)" : ""}
+                    {bookedCount > 0 && ` • ${bookedCount} booked`}
+                  </span>
                 </Button>
               );
             })}
@@ -215,21 +361,32 @@ export function Availability({ barberId }: AvailabilityProps) {
               onClick={deselectAllSlots}
               className="text-sm border-red-500 text-red-500 hover:bg-red-50 hover:text-red-600"
             >
-              Clear All Slots
+              Clear Available Slots
             </Button>
           </div>
           
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 mt-4">
-            {timeSlots.map(slot => (
-              <Button
-                key={slot.value}
-                variant={selectedSlots[selectedDay]?.includes(slot.value) ? "default" : "outline"}
-                onClick={() => handleSlotToggle(slot.value)}
-                className="text-sm"
-              >
-                {slot.label}
-              </Button>
-            ))}
+            {timeSlots.map(slot => {
+              const isBooked = isSlotBooked(slot.value);
+              const isSelected = selectedSlots[selectedDay]?.includes(slot.value);
+              
+              return (
+                <Button
+                  key={slot.value}
+                  variant={isSelected ? "default" : "outline"}
+                  onClick={() => handleSlotToggle(slot.value)}
+                  className={`text-sm ${isBooked ? "bg-amber-100 border-amber-500 text-amber-700 hover:bg-amber-200 hover:text-amber-800" : ""}`}
+                  disabled={isBooked}
+                >
+                  {slot.label}
+                  {isBooked && <span className="ml-1 text-xs">(Booked)</span>}
+                </Button>
+              );
+            })}
+          </div>
+          
+          <div className="mt-4 text-sm text-muted-foreground">
+            <p>Note: Slots marked as <span className="text-amber-700">(Booked)</span> already have customer appointments and cannot be removed from your availability.</p>
           </div>
         </div>
       </CardContent>

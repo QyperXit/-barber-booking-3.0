@@ -95,65 +95,100 @@ export const seedSlots = mutation({
     date: v.optional(v.union(v.string(), v.number())), // Optional date param
   },
   handler: async (ctx, { barberId, date }) => {
+    console.log('\n==== Seeding slots ====');
+    
     // Use specified date or default to today
-    let targetDate: Date;
-    let targetTimestamp: number;
+    let dateObj: Date;
+    let formattedDateString: string; // YYYY-MM-DD format
+    let formattedDateTimestamp: string; // Timestamp as string
     
     if (date) {
       if (typeof date === 'number') {
-        targetDate = new Date(date);
-        targetTimestamp = date;
+        dateObj = new Date(date);
+        formattedDateTimestamp = String(date);
+        formattedDateString = formatDate(dateObj);
       } else if (!isNaN(Number(date))) {
-        targetDate = new Date(Number(date));
-        targetTimestamp = Number(date);
+        dateObj = new Date(Number(date));
+        formattedDateTimestamp = String(Number(date));
+        formattedDateString = formatDate(dateObj);
       } else {
-        targetDate = new Date(date);
-        targetTimestamp = targetDate.getTime();
+        dateObj = new Date(date);
+        formattedDateString = date;
+        formattedDateTimestamp = String(dateObj.getTime());
       }
     } else {
-      targetDate = new Date();
-      targetDate.setHours(0, 0, 0, 0);
-      targetTimestamp = targetDate.getTime();
+      dateObj = new Date();
+      dateObj.setHours(0, 0, 0, 0);
+      formattedDateTimestamp = String(dateObj.getTime());
+      formattedDateString = formatDate(dateObj);
     }
     
-    console.log('Seeding slots for', targetDate, 'timestamp:', targetTimestamp);
+    console.log('Seeding slots for', dateObj);
+    console.log('String date format:', formattedDateString);
+    console.log('Timestamp format:', formattedDateTimestamp);
     
-    // Format date for database query - using the same format as the input
-    const formattedDate = date ? (typeof date === 'string' ? date : String(targetTimestamp)) : String(targetTimestamp);
-    
-    // Check if slots already exist
-    const existingSlots = await ctx.db
+    // Check if slots already exist in either format
+    const existingStringSlots = await ctx.db
       .query("slots")
       .withIndex("by_barber_date", (q) => 
-        q.eq("barberId", barberId).eq("date", formattedDate)
+        q.eq("barberId", barberId).eq("date", formattedDateString)
       )
       .collect();
     
-    console.log('Existing slots found:', existingSlots.length);
+    const existingTimestampSlots = await ctx.db
+      .query("slots")
+      .withIndex("by_barber_date", (q) => 
+        q.eq("barberId", barberId).eq("date", formattedDateTimestamp)
+      )
+      .collect();
+    
+    const existingSlots = [...existingStringSlots, ...existingTimestampSlots];
+    console.log(`Found ${existingSlots.length} existing slots (${existingStringSlots.length} with string format, ${existingTimestampSlots.length} with timestamp format)`);
     
     if (existingSlots.length > 0) {
+      console.log('Slots already exist, returning existing slot IDs');
+      console.log('==== Completed slot seeding ====\n');
       return existingSlots.map(slot => slot._id);
     }
     
-    // Create slots
-    const slotIds = [];
+    // Create slots in both formats
+    const slotPairs = [];
+    
     for (let time = OPENING_TIME; time < CLOSING_TIME; time += SLOT_DURATION) {
-      const slotId = await ctx.db.insert("slots", {
+      console.log(`Creating slot for ${formatTime(time)} in both date formats`);
+      
+      // Create slot with string date format
+      const stringSlotId = await ctx.db.insert("slots", {
         barberId,
-        date: formattedDate,
+        date: formattedDateString,
         startTime: time,
         endTime: time + SLOT_DURATION,
-        isBooked: false,
         isAvailable: true,
-        price: 25, // Default price $25
+        isBooked: false,
+        price: 25, // Default price
         lastUpdated: Date.now()
       });
-      slotIds.push(slotId);
+      
+      // Create slot with timestamp date format
+      const timestampSlotId = await ctx.db.insert("slots", {
+        barberId,
+        date: formattedDateTimestamp,
+        startTime: time,
+        endTime: time + SLOT_DURATION,
+        isAvailable: true,
+        isBooked: false,
+        price: 25, // Default price
+        lastUpdated: Date.now()
+      });
+      
+      slotPairs.push({ stringSlotId, timestampSlotId });
     }
     
-    console.log(`Created ${slotIds.length} slots for ${targetDate}`);
+    console.log(`Created ${slotPairs.length} slot pairs (${slotPairs.length * 2} total slots)`);
+    console.log('==== Completed slot seeding ====\n');
     
-    return slotIds;
+    // Return all the IDs for compatibility
+    return slotPairs.flatMap(pair => [pair.stringSlotId, pair.timestampSlotId]);
   }
 });
 
@@ -164,16 +199,70 @@ export const forceRefresh = mutation({
     date: v.union(v.string(), v.number()) // Allow both string and number formats
   },
   handler: async (ctx, { barberId, date }) => {
-    // Find all slots for this barber and date
-    const slots = await ctx.db
+    console.log('\n==== Force refreshing slots ====');
+    console.log('barberId:', barberId, 'date:', date, 'type:', typeof date);
+    
+    // First, normalize the date into both formats
+    let dateObj: Date;
+    let formattedDateString: string; // YYYY-MM-DD format
+    let formattedDateTimestamp: string; // Timestamp as string
+    
+    if (typeof date === 'number') {
+      dateObj = new Date(date);
+      formattedDateTimestamp = String(date);
+      formattedDateString = formatDate(dateObj);
+    } else {
+      // If it's a string, first check if it's a timestamp in string form
+      if (!isNaN(Number(date))) {
+        dateObj = new Date(Number(date));
+        formattedDateTimestamp = date;
+        formattedDateString = formatDate(dateObj);
+      } else {
+        // It's a formatted date string like YYYY-MM-DD
+        dateObj = new Date(date);
+        formattedDateString = date;
+        formattedDateTimestamp = String(dateObj.getTime());
+      }
+    }
+    
+    console.log('Date object:', dateObj);
+    console.log('String date format:', formattedDateString);
+    console.log('Timestamp format:', formattedDateTimestamp);
+    
+    // Find all slots for this barber and date in both formats
+    const stringSlots = await ctx.db
       .query("slots")
       .withIndex("by_barber_date", (q) => 
-        q.eq("barberId", barberId).eq("date", date)
+        q.eq("barberId", barberId).eq("date", formattedDateString)
       )
       .collect();
+    
+    const timestampSlots = await ctx.db
+      .query("slots")
+      .withIndex("by_barber_date", (q) => 
+        q.eq("barberId", barberId).eq("date", formattedDateTimestamp)
+      )
+      .collect();
+    
+    const slots = [...stringSlots, ...timestampSlots];
+    console.log(`Found ${slots.length} slots (${stringSlots.length} with string format, ${timestampSlots.length} with timestamp format)`);
+    
+    // If no slots found, return early with a special status
+    if (slots.length === 0) {
+      console.log('No slots found to refresh');
+      console.log('==== Force refresh completed ====\n');
+      return {
+        refreshed: 0,
+        fixed: 0,
+        timestamp: Date.now(),
+        noSlots: true
+      };
+    }
       
-    // Find all bookings for these slots
+    // Get all the slot IDs for lookup
     const slotIds = slots.map(slot => slot._id);
+    
+    // Find all bookings that are confirmed for this barber
     const bookings = await ctx.db
       .query("bookings")
       .filter(q => q.and(
@@ -181,23 +270,34 @@ export const forceRefresh = mutation({
         q.eq(q.field("status"), "confirmed")
       ))
       .collect();
+    
+    console.log(`Found ${bookings.length} confirmed bookings for this barber`);
       
     // Filter to bookings that are for slots on this date
     const bookingsForThisDate = bookings.filter(booking => 
       slotIds.some(slotId => slotId === booking.slotId)
     );
     
+    console.log(`Found ${bookingsForThisDate.length} bookings for this date`);
+    
+    // Create a map of slot ID to booking
+    const slotToBooking = new Map();
+    bookingsForThisDate.forEach(booking => {
+      slotToBooking.set(booking.slotId, booking);
+    });
+    
     // Check if any slots have inconsistent booking status
     let fixedSlots = 0;
     
-    // First, create a set of slot IDs that should be marked as booked based on bookings
-    const shouldBeBooked = new Set(bookingsForThisDate.map(b => b.slotId));
-    
-    // Next, identify slots that need fixing in either direction (should be booked but isn't, or vice versa)
+    // Next, identify slots that need fixing in either direction
     const slotsToUpdate = [];
+    
     for (const slot of slots) {
+      const hasBooking = slotToBooking.has(slot._id);
+      
       // Case 1: Slot should be booked according to bookings, but isn't marked as booked
-      if (shouldBeBooked.has(slot._id) && !slot.isBooked) {
+      if (hasBooking && !slot.isBooked) {
+        console.log(`Fixing slot ${slot._id} (${formatTime(slot.startTime)}): marking as booked`);
         slotsToUpdate.push({
           id: slot._id,
           update: { isBooked: true, lastUpdated: Date.now() }
@@ -206,7 +306,8 @@ export const forceRefresh = mutation({
       }
       
       // Case 2: Slot is marked as booked, but there's no corresponding booking
-      else if (slot.isBooked && !shouldBeBooked.has(slot._id)) {
+      else if (slot.isBooked && !hasBooking) {
+        console.log(`Fixing slot ${slot._id} (${formatTime(slot.startTime)}): marking as not booked`);
         slotsToUpdate.push({
           id: slot._id,
           update: { isBooked: false, lastUpdated: Date.now() }
@@ -222,10 +323,14 @@ export const forceRefresh = mutation({
       }
     }
     
+    console.log(`Updating ${slotsToUpdate.length} slots, fixed ${fixedSlots} inconsistencies`);
+    
     // Now update all slots
     for (const slotUpdate of slotsToUpdate) {
       await ctx.db.patch(slotUpdate.id, slotUpdate.update);
     }
+    
+    console.log('==== Force refresh completed ====\n');
     
     return {
       refreshed: slots.length,
@@ -246,6 +351,8 @@ export const updateAvailability = mutation({
     )
   },
   handler: async (ctx, { barberId, availability }) => {
+    console.log('Updating availability for barber:', barberId);
+    
     // First, get dates for the next 4 weeks
     const dates = getNextWeeksDates(4);
     
@@ -256,35 +363,169 @@ export const updateAvailability = mutation({
       
       if (!dayAvailability) continue;
       
-      // Get existing slots for this barber and date
-      const existingSlots = await ctx.db
+      // We need to handle both date formats (string formatted date and timestamp)
+      const formattedDateString = dateObj.formatted; // YYYY-MM-DD format
+      const formattedDateTimestamp = String(dateObj.date.getTime()); // Timestamp as string
+      
+      console.log(`\n==== Updating availability for ${dayOfWeek} (${formattedDateString}) ====`);
+      
+      // Get existing slots with string formatted date
+      const existingStringSlots = await ctx.db
         .query("slots")
         .withIndex("by_barber_date", (q) => 
-          q.eq("barberId", barberId).eq("date", dateObj.formatted)
+          q.eq("barberId", barberId).eq("date", formattedDateString)
         )
         .collect();
       
-      // Delete existing slots for this day
-      for (const slot of existingSlots) {
-        await ctx.db.delete(slot._id);
+      // Get existing slots with timestamp format
+      const existingTimestampSlots = await ctx.db
+        .query("slots")
+        .withIndex("by_barber_date", (q) => 
+          q.eq("barberId", barberId).eq("date", formattedDateTimestamp)
+        )
+        .collect();
+      
+      // Combine both sets of slots (important to get a full picture)
+      const existingSlots = [...existingStringSlots, ...existingTimestampSlots];
+      console.log(`Found ${existingSlots.length} existing slots (${existingStringSlots.length} with string format, ${existingTimestampSlots.length} with timestamp format)`);
+      
+      // Step 1: Find all booked slots
+      const bookedSlots = existingSlots.filter(slot => slot.isBooked);
+      console.log(`Found ${bookedSlots.length} booked slots that must be preserved`);
+      
+      // Group booked slots by time for easier lookup
+      const bookedSlotsByTime = new Map();
+      bookedSlots.forEach(slot => {
+        const key = String(slot.startTime);
+        if (!bookedSlotsByTime.has(key)) {
+          bookedSlotsByTime.set(key, []);
+        }
+        bookedSlotsByTime.get(key).push(slot);
+      });
+      
+      // Step 2: Get the times that are in the barber's new availability
+      const selectedTimes = new Set(dayAvailability.times);
+      console.log(`Barber selected ${selectedTimes.size} available times`);
+      
+      // Step 3: Determine final availability (including booked slots)
+      const finalAvailability = new Set<number>(selectedTimes);
+      
+      // Add all booked times to ensure they remain available
+      bookedSlots.forEach(slot => {
+        if (!finalAvailability.has(slot.startTime)) {
+          console.log(`Adding booked time ${formatTime(slot.startTime)} to availability (barber attempted to remove it)`);
+          finalAvailability.add(slot.startTime);
+        }
+      });
+      
+      console.log(`Final availability includes ${finalAvailability.size} slots (including booked ones)`);
+      
+      // Step 4: Process existing slots
+      // We'll keep track of which slots are already handled to avoid duplicates
+      const handledSlotIds = new Set();
+      const timesToCreate = new Set<number>();
+      
+      // Add all final available times to the creation set initially
+      finalAvailability.forEach(time => {
+        timesToCreate.add(time);
+      });
+      
+      // First, handle booked slots - we always preserve these
+      for (const slot of bookedSlots) {
+        // This slot should remain booked and available
+        console.log(`Preserving booked slot ${slot._id} for time ${formatTime(slot.startTime)}`);
+        
+        // Make sure isAvailable is set correctly
+        if (!slot.isAvailable) {
+          console.log(`Fixing isAvailable flag on booked slot ${slot._id}`);
+          await ctx.db.patch(slot._id, { 
+            isAvailable: true,
+            lastUpdated: Date.now()
+          });
+        }
+        
+        handledSlotIds.add(slot._id);
+        
+        // We've handled this time slot, remove it from the creation list
+        timesToCreate.delete(slot.startTime);
       }
       
-      // Create new slots based on the availability
-      for (const time of dayAvailability.times) {
-        // Each slot is 30 minutes
-        await ctx.db.insert("slots", {
+      // Now handle non-booked slots - either mark as available or unavailable
+      for (const slot of existingSlots) {
+        if (!slot.isBooked && !handledSlotIds.has(slot._id)) {
+          const isInFinalAvailability = finalAvailability.has(slot.startTime);
+          
+          if (isInFinalAvailability) {
+            // This slot should be available
+            console.log(`Marking slot ${slot._id} for time ${formatTime(slot.startTime)} as available`);
+            await ctx.db.patch(slot._id, {
+              isAvailable: true,
+              lastUpdated: Date.now()
+            });
+            
+            // Remove from creation list since we're keeping this slot
+            timesToCreate.delete(slot.startTime);
+          } else {
+            // This slot should be marked as unavailable instead of deleted
+            console.log(`Marking slot ${slot._id} for time ${formatTime(slot.startTime)} as unavailable`);
+            await ctx.db.patch(slot._id, {
+              isAvailable: false,
+              lastUpdated: Date.now()
+            });
+          }
+          
+          handledSlotIds.add(slot._id);
+        }
+      }
+      
+      // Step 5: Create new slots for any times that should be available but don't have slots yet
+      console.log(`Creating ${timesToCreate.size} new available slots`);
+      
+      // Convert Set to Array before iteration to avoid TypeScript downlevelIteration errors
+      for (const time of Array.from(timesToCreate)) {
+        // Create slot with string date format
+        const stringSlotId = await ctx.db.insert("slots", {
           barberId,
-          date: dateObj.formatted,
+          date: formattedDateString,
           startTime: time,
           endTime: time + 30,
-          isAvailable: true
+          isAvailable: true, // These should always be available
+          isBooked: false,
+          price: 25, // Default price
+          lastUpdated: Date.now()
         });
+        
+        // Create slot with timestamp date format
+        const timestampSlotId = await ctx.db.insert("slots", {
+          barberId,
+          date: formattedDateTimestamp,
+          startTime: time,
+          endTime: time + 30,
+          isAvailable: true, // These should always be available
+          isBooked: false,
+          price: 25, // Default price
+          lastUpdated: Date.now()
+        });
+        
+        console.log(`Created new available slots for ${formatTime(time)} with IDs ${stringSlotId} and ${timestampSlotId}`);
       }
+      
+      console.log(`==== Completed availability update for ${dayOfWeek} ====\n`);
     }
     
     return { success: true };
   }
 });
+
+// Helper function to format time
+function formatTime(minutes: number): string {
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  const formattedHours = hours % 12 || 12;
+  const formattedMins = mins.toString().padStart(2, '0');
+  return `${formattedHours}:${formattedMins} ${ampm}`;
+}
 
 // Helper function to get dates for the next few weeks
 function getNextWeeksDates(weeks: number) {
@@ -328,43 +569,56 @@ export const generateSlotsFromTemplate = mutation({
     duration: v.optional(v.number()), // Duration of each slot in minutes, defaults to 30
   },
   handler: async (ctx, { barberId, date, duration = 30 }) => {
-    console.log('Generating slots for date:', date, 'type:', typeof date);
+    console.log('\n==== Generating slots for date:', date, 'type:', typeof date, '====');
     
-    // Convert date to a proper Date object and ensure consistent format
+    // Convert date to a proper Date object for processing
     let dateObj: Date;
-    let formattedDate: string;
+    let formattedDateString: string; // YYYY-MM-DD format
+    let formattedDateTimestamp: string; // Timestamp as string
     
     if (typeof date === 'number') {
       dateObj = new Date(date);
-      // Also store the original timestamp for querying
-      formattedDate = String(date);
+      formattedDateTimestamp = String(date);
+      formattedDateString = formatDate(dateObj);
     } else {
       // If it's a string, first check if it's a timestamp in string form
       if (!isNaN(Number(date))) {
         dateObj = new Date(Number(date));
-        formattedDate = date;
+        formattedDateTimestamp = date;
+        formattedDateString = formatDate(dateObj);
       } else {
         // It's a formatted date string like YYYY-MM-DD
         dateObj = new Date(date);
-        formattedDate = date;
+        formattedDateString = date;
+        formattedDateTimestamp = String(dateObj.getTime());
       }
     }
     
-    console.log('Date object:', dateObj, 'formatted date for lookup:', formattedDate);
+    console.log('Date object:', dateObj);
+    console.log('String date format for storage:', formattedDateString);
+    console.log('Timestamp format for storage:', formattedDateTimestamp);
     
     // Get day of week for the specified date
     const dayOfWeek = getDayOfWeek(dateObj);
     console.log('Day of week:', dayOfWeek);
     
-    // Check if slots already exist for this date
-    const existingSlots = await ctx.db
+    // Check if slots already exist with either date format
+    const existingStringSlots = await ctx.db
       .query("slots")
       .withIndex("by_barber_date", (q) => 
-        q.eq("barberId", barberId).eq("date", formattedDate)
+        q.eq("barberId", barberId).eq("date", formattedDateString)
       )
       .collect();
     
-    console.log('Existing slots found:', existingSlots.length);
+    const existingTimestampSlots = await ctx.db
+      .query("slots")
+      .withIndex("by_barber_date", (q) => 
+        q.eq("barberId", barberId).eq("date", formattedDateTimestamp)
+      )
+      .collect();
+    
+    const existingSlots = [...existingStringSlots, ...existingTimestampSlots];
+    console.log(`Found ${existingSlots.length} existing slots (${existingStringSlots.length} with string format, ${existingTimestampSlots.length} with timestamp format)`);
     
     // If slots already exist, return them
     if (existingSlots.length > 0) {
@@ -382,9 +636,9 @@ export const generateSlotsFromTemplate = mutation({
       )
       .first();
     
-    console.log('Found template:', template ? 'yes' : 'no', template);
+    console.log('Found template:', template ? 'yes' : 'no');
     
-    // If no template exists, return empty array
+    // If no template exists, return appropriate status
     if (!template) {
       return {
         status: "no_template",
@@ -392,32 +646,55 @@ export const generateSlotsFromTemplate = mutation({
       };
     }
     
-    // Generate slots based on template
-    const slotIds = [];
+    // Generate slots based on template in both date formats
+    const slotPairs = []; // To keep track of string/timestamp slot pairs
+    
     for (const startTime of template.startTimes) {
-      const slotId = await ctx.db.insert("slots", {
+      console.log(`Creating slot for ${formatTime(startTime)} in both date formats`);
+      
+      // Create slot with string date format
+      const stringSlotId = await ctx.db.insert("slots", {
         barberId,
-        date: formattedDate,
+        date: formattedDateString,
         startTime,
         endTime: startTime + duration,
         isAvailable: true,
         isBooked: false,
-        price: 25, // Default price, could be configurable
+        price: 25, // Default price
         lastUpdated: Date.now()
       });
-      slotIds.push(slotId);
+      
+      // Create slot with timestamp date format
+      const timestampSlotId = await ctx.db.insert("slots", {
+        barberId,
+        date: formattedDateTimestamp,
+        startTime,
+        endTime: startTime + duration,
+        isAvailable: true,
+        isBooked: false,
+        price: 25, // Default price
+        lastUpdated: Date.now()
+      });
+      
+      slotPairs.push({ stringSlotId, timestampSlotId });
     }
     
-    console.log(`Generated ${slotIds.length} slots successfully`);
+    console.log(`Generated ${slotPairs.length} slot pairs (${slotPairs.length * 2} total slots) successfully`);
     
-    // Fetch the created slots
-    const slots = await Promise.all(
-      slotIds.map(id => ctx.db.get(id))
-    );
+    // Fetch the created slots (we'll get both formats)
+    const slots = await ctx.db
+      .query("slots")
+      .withIndex("by_barber_date", (q) => 
+        q.eq("barberId", barberId).eq("date", formattedDateString)
+      )
+      .collect();
+    
+    console.log(`Found ${slots.length} slots after generation`);
+    console.log('==== Completed slot generation ====\n');
     
     return {
       status: "generated",
-      slots: slots.filter(Boolean) // Remove any nulls
+      slots: slots
     };
   }
 });

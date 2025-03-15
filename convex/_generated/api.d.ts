@@ -19,6 +19,7 @@ import type * as barbers from "../barbers.js";
 import type * as bookings from "../bookings.js";
 import type * as constants from "../constants.js";
 import type * as crons from "../crons.js";
+import type * as migrations from "../migrations.js";
 import type * as slots from "../slots.js";
 
 /**
@@ -36,6 +37,7 @@ declare const fullApi: ApiFromModules<{
   bookings: typeof bookings;
   constants: typeof constants;
   crons: typeof crons;
+  migrations: typeof migrations;
   slots: typeof slots;
 }>;
 export declare const api: FilterApi<
