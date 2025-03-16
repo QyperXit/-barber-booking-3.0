@@ -32,8 +32,8 @@ This application is the third iteration of the G|Barbers platform, representing 
 We're actively working on additional features and improvements for G|Barbers 3.0:
 
 - **Enhanced Analytics**: Detailed insights for barbers to track business performance
-- **Email Notifications**: Automated reminders and booking confirmations
-- **Mobile App**: Native mobile experience for both customers and barbers
+- **Responsive Redesign**: Improved mobile and desktop user experience
+- **Notifications**: Automated booking reminders and status updates
 - **Advanced Scheduling**: Support for recurring appointments and package bookings
 - **Public Deployment**: Production deployment coming soon!
 
