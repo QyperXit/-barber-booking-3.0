@@ -9,8 +9,15 @@ export default defineSchema({
     userId: v.string(), // Owner/admin of this barber
     imageStorageId: v.optional(v.id("_storage")),
     isActive: v.boolean(),
+    // Stripe Connect fields
+    stripeAccountId: v.optional(v.string()),
+    stripeAccountOnboardingComplete: v.optional(v.boolean()),
+    stripeAccountPayoutsEnabled: v.optional(v.boolean()),
+    stripeAccountChargesEnabled: v.optional(v.boolean()),
+    stripeAccountCreatedAt: v.optional(v.number()),
   }).index("by_name", ["name"])
-    .index("by_user", ["userId"]),
+    .index("by_user", ["userId"])
+    .index("by_stripe_account", ["stripeAccountId"]),
   
   slots: defineTable({
     barberId: v.id("barbers"),
@@ -42,6 +49,9 @@ export default defineSchema({
     services: v.array(v.string()),
     status: v.string(),
     createdAt: v.string(),
+    // Payment-related fields
+    paymentStatus: v.optional(v.string()),
+    paymentId: v.optional(v.string()),
   }).index("by_user", ["userId"])
     .index("by_barber", ["barberId"])
     .index("by_date", ["date"]),
@@ -52,18 +62,31 @@ export default defineSchema({
     userId: v.string(),
     bookedAt: v.number(),
     status: v.union(
+      v.literal("pending"),
       v.literal("confirmed"),
       v.literal("completed"),
       v.literal("cancelled"),
       v.literal("refunded")
     ),
     paymentIntentId: v.optional(v.string()),
+    paymentStatus: v.optional(v.union(
+      v.literal("pending"),
+      v.literal("processing"),
+      v.literal("succeeded"),
+      v.literal("failed"),
+      v.literal("cancelled"),
+      v.literal("refunded")
+    )),
     amount: v.number(),
     serviceName: v.string(),
+    currency: v.optional(v.string()),
+    receiptUrl: v.optional(v.string()),
+    stripeSessionId: v.optional(v.string()),
   }).index("by_slot", ["slotId"])
     .index("by_barber", ["barberId"])
     .index("by_user", ["userId"])
-    .index("by_payment_intent", ["paymentIntentId"]),
+    .index("by_payment_intent", ["paymentIntentId"])
+    .index("by_stripe_session", ["stripeSessionId"]),
   
   users: defineTable({
     name: v.string(),

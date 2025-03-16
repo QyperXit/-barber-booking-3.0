@@ -29,30 +29,27 @@ export async function POST(request: NextRequest) {
     switch (event.type) {
       case 'checkout.session.completed': {
         const session = event.data.object;
+        const { bookingId, slotId, barberId, userId } = session.metadata || {};
         
-        // Retrieve metadata from the session
-        const { appointmentId, barberId, slotId, userId } = session.metadata || {};
-        const paymentIntentId = session.payment_intent as string;
-        
-        if (!slotId || !barberId) {
-          console.error('Missing required metadata in checkout session:', session.metadata);
-          return NextResponse.json(
-            { error: 'Missing required metadata' },
-            { status: 400 }
-          );
+        if (slotId && barberId) {
+          // Update the booking in Convex
+          await convex.mutation(api.bookings.updatePaymentStatus, {
+            slotId: slotId as Id<'slots'>,
+            barberId: barberId as Id<'barbers'>,
+            paymentIntentId: session.payment_intent as string,
+            paymentStatus: 'succeeded',
+            stripeSessionId: session.id,
+            receiptUrl: (session as any).receipt_url,
+          });
+          
+          // Force refresh the slots to ensure consistency
+          await convex.mutation(api.slots.forceRefresh, {
+            barberId: barberId as Id<'barbers'>,
+            date: new Date().toISOString().split('T')[0] // Use today's date
+          });
         }
-
-        // Update the booking in Convex
-        await convex.mutation(api.bookings.updatePaymentStatus, {
-          slotId: slotId as Id<'slots'>,
-          barberId: barberId as Id<'barbers'>,
-          paymentIntentId,
-          paymentStatus: 'succeeded',
-          stripeSessionId: session.id,
-          receiptUrl: (session as any).receipt_url,
-        });
-
-        console.log(`Payment succeeded for booking with payment intent: ${paymentIntentId}`);
+        
+        console.log(`Payment succeeded for booking with payment intent: ${session.payment_intent}`);
         break;
       }
       

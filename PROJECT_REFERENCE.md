@@ -476,15 +476,89 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 
 ### Stripe Integration Type Issues
 
-1. **Receipt URL Handling**: The Stripe SDK's TypeScript definitions don't include the `receipt_url` property on checkout sessions, even though it's available in the API response. The application handles this by using a type cast: `(session as any).receipt_url`.
+1. **Receipt URL Type Issue**: The Stripe webhook handler needs to cast the `session.receipt_url` to `(session as any).receipt_url` because the TypeScript type definitions don't include this property.
 
-2. **Status String Handling**: When updating booking and payment statuses from webhook events, explicit type casting is used to satisfy TypeScript requirements:
    ```typescript
-   status: bookingStatus as "confirmed" | "completed" | "cancelled" | "refunded",
-   paymentStatus: paymentStatus as "pending" | "processing" | "succeeded" | "failed" | "cancelled" | "refunded",
+   // In app/api/webhooks/stripe/route.ts
+   await convex.mutation(api.bookings.updatePaymentStatus, {
+     // other parameters...
+     receiptUrl: (session as any).receipt_url,
+   });
    ```
 
-3. **Stripe Connect Testing**: For testing Stripe Connect:
-   - Use your real email address (required even in test mode)
-   - For bank account details, use test values like routing number `110000000` and account number `000123456789`
-   - For other verification steps, use placeholder data as guided by Stripe's test mode UI 
+2. **Status String Handling**: When updating booking status from Stripe events, we need to cast the status strings to their appropriate types:
+
+   ```typescript
+   // In convex/bookings.ts
+   await ctx.db.patch(booking._id, {
+     status: bookingStatus as "pending" | "confirmed" | "completed" | "cancelled" | "refunded",
+     paymentStatus: paymentStatus as "pending" | "processing" | "succeeded" | "failed" | "cancelled" | "refunded",
+   });
+   ```
+
+### Booking Flow Improvements
+
+1. **Slot Booking Status Issue**: Fixed an issue where booked slots would still appear as available after a successful payment. The solution involved:
+
+   - Adding a new "pending" status to the booking flow
+   - Only marking slots as booked after payment confirmation
+   - Ensuring the webhook handler calls `forceRefresh` after processing payments
+   - Adding a check for URL parameters that indicate a successful payment
+
+   ```typescript
+   // In convex/bookings.ts - create function
+   // Only mark the slot as reserved temporarily
+   await ctx.db.patch(slotId, { 
+     lastUpdated: Date.now()
+     // isBooked flag will be set after payment confirmation
+   });
+   
+   // Create the booking with PENDING status instead of CONFIRMED
+   const bookingId = await ctx.db.insert("bookings", {
+     // other fields...
+     status: BOOKING_STATUS.PENDING,
+   });
+   ```
+
+   ```typescript
+   // In convex/bookings.ts - updatePaymentStatus function
+   // If payment succeeded, update booking status to confirmed
+   if (paymentStatus === "succeeded") {
+     updates.status = BOOKING_STATUS.CONFIRMED;
+     
+     // Now explicitly mark the slot as booked when payment succeeds
+     await ctx.db.patch(slotId, {
+       isBooked: true,
+       lastUpdated: Date.now(),
+     });
+   }
+   ```
+
+   ```typescript
+   // In app/api/webhooks/stripe/route.ts
+   // Force refresh the slots to ensure consistency
+   await convex.mutation(api.slots.forceRefresh, {
+     barberId: barberId as Id<'barbers'>,
+     date: new Date().toISOString().split('T')[0] // Use today's date
+   });
+   ```
+
+2. **Payment Success Detection**: Added code to detect when a user returns from a successful payment and refresh the slot data:
+
+   ```typescript
+   // In app/book/[barberId]/page.tsx
+   useEffect(() => {
+     const searchParams = new URLSearchParams(window.location.search);
+     const success = searchParams.get('success');
+     
+     if (success === 'true') {
+       // Force refresh to ensure slot data is up to date
+       handleForceRefresh();
+       
+       toast({
+         title: "Payment Successful",
+         description: "Your booking has been confirmed.",
+       });
+     }
+   }, []);
+   ``` 

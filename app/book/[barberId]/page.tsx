@@ -20,6 +20,7 @@ export default function BookPage() {
   const [serviceName, setServiceName] = useState("Haircut");
   const [refreshCounter, setRefreshCounter] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   
   const TEST_USER_ID = "test_user_id"; // For Phase 1 testing
 
@@ -51,6 +52,9 @@ export default function BookPage() {
     { barberId: barberIdAsId, date: selectedTimestamp }
   );
   
+  // Get the Stripe onboarding status of the barber
+  const stripeStatus = useQuery(api.barbers.hasCompletedStripeOnboarding, { barberId: barberIdAsId });
+
   // Combine slots from both queries, removing duplicates
   const slots = React.useMemo(() => {
     // Set isLoading state based on whether queries have completed
@@ -72,6 +76,34 @@ export default function BookPage() {
     
     return uniqueSlots;
   }, [slotsWithStringFormat, slotsWithTimestampFormat]);
+  
+  // Add a useEffect to check for URL parameters that indicate a successful payment
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const success = searchParams.get('success');
+    const cancelled = searchParams.get('cancelled');
+    
+    if (success === 'true') {
+      console.log('Payment was successful, refreshing slot data');
+      // Force refresh to ensure slot data is up to date
+      handleForceRefresh();
+      
+      toast({
+        title: "Payment Successful",
+        description: "Your booking has been confirmed. You can view it in your appointments.",
+      });
+    } else if (cancelled === 'true') {
+      console.log('Payment was cancelled, refreshing slot data');
+      // Force refresh to ensure slot data is up to date
+      handleForceRefresh();
+      
+      toast({
+        title: "Payment Cancelled",
+        description: "Your booking has been cancelled. You can try again.",
+        variant: "destructive",
+      });
+    }
+  }, []);
   
   // Add a useEffect to explicitly refetch when the refreshCounter changes
   useEffect(() => {
@@ -385,32 +417,72 @@ export default function BookPage() {
       });
       return;
     }
+    
+    // Check if barber has completed Stripe onboarding
+    if (!stripeStatus?.hasStripeAccount || !stripeStatus?.onboardingComplete) {
+      toast({
+        title: "Payment not available",
+        description: "This barber hasn't set up payment processing yet. Please try again later.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     try {
-      await createBooking({
+      setIsProcessingPayment(true);
+      
+      // Get the selected slot for price information
+      const slot = slots?.find(s => s._id === selectedSlot);
+      const slotPrice = slot?.price || 25; // Default to $25 if no price set
+      
+      // Create the booking in Convex
+      const bookingId = await createBooking({
         slotId: selectedSlot,
-        userId: currentUserId, // Now guaranteed to be a string
+        userId: currentUserId,
         serviceName,
         userName: user?.fullName || user?.firstName || undefined,
         userEmail: user?.primaryEmailAddress?.emailAddress,
       });
       
-      toast({
-        title: "Booking confirmed",
-        description: "Your appointment has been booked successfully!",
+      // Create a Stripe checkout session
+      const response = await fetch('/api/stripe/create-checkout-session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          bookingId,
+          slotId: selectedSlot,
+          barberId: barberIdAsId,
+          userId: currentUserId,
+          customerEmail: user?.primaryEmailAddress?.emailAddress,
+          serviceName,
+          amount: slotPrice,
+        }),
       });
       
-      // Force refresh to update the UI
-      await handleForceRefresh();
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to create checkout session");
+      }
       
-      // Navigate to appointments page
-      router.push("/appointments");
+      const { url } = await response.json();
+      
+      // Redirect to the Stripe checkout page
+      window.location.href = url;
+      
     } catch (error) {
+      console.error('Booking error:', error);
       toast({
         title: "Booking failed",
-        description: "There was an error booking your appointment.",
+        description: error instanceof Error ? error.message : "There was an error booking your appointment.",
         variant: "destructive",
       });
+      
+      // Force refresh to update UI
+      await handleForceRefresh();
+      
+      setIsProcessingPayment(false);
     }
   };
 
@@ -596,9 +668,9 @@ export default function BookPage() {
           className="w-full" 
           variant="outline"
           onClick={handleBooking}
-          disabled={!selectedSlot}
+          disabled={!selectedSlot || isProcessingPayment}
         >
-          Book Appointment
+          {isProcessingPayment ? 'Processing...' : 'Book Appointment'}
         </Button>
       </div>
     </div>

@@ -83,19 +83,20 @@ export const create = mutation({
     // Use the user's name from the database, or the provided userName, or a better default
     const customerName = user?.name || userName || "Guest User";
     
-    // Update the slot to be booked
+    // MODIFIED: We don't mark the slot as booked yet, we wait for payment confirmation
+    // Only mark the slot as reserved temporarily
     await ctx.db.patch(slotId, { 
-      isBooked: true,
       lastUpdated: Date.now()
+      // isBooked flag will be set after payment confirmation
     });
     
-    // Create the booking
+    // Create the booking with PENDING status instead of CONFIRMED
     const bookingId = await ctx.db.insert("bookings", {
       slotId,
       barberId: slot.barberId,
       userId,
       bookedAt: Date.now(),
-      status: BOOKING_STATUS.CONFIRMED,
+      status: BOOKING_STATUS.PENDING, // Changed from CONFIRMED to PENDING
       amount: slot.price ?? 0,
       serviceName,
       paymentStatus: "pending", // Initial payment status
@@ -211,7 +212,7 @@ export const createTestUser = mutation({
   }
 });
 
-// Update booking payment status
+// Update payment status for a booking
 export const updatePaymentStatus = mutation({
   args: {
     slotId: v.id("slots"),
@@ -222,11 +223,10 @@ export const updatePaymentStatus = mutation({
     receiptUrl: v.optional(v.string()),
   },
   handler: async (ctx, { slotId, barberId, paymentIntentId, paymentStatus, stripeSessionId, receiptUrl }) => {
-    // Find the booking by slot ID and barber ID
+    // Find the booking that has this slot ID
     const booking = await ctx.db
       .query("bookings")
-      .withIndex("by_slot", (q) => q.eq("slotId", slotId))
-      .filter((q) => q.eq(q.field("barberId"), barberId))
+      .withIndex("by_slot", q => q.eq("slotId", slotId))
       .first();
     
     if (!booking) {
@@ -250,6 +250,12 @@ export const updatePaymentStatus = mutation({
     // If payment succeeded, update booking status to confirmed
     if (paymentStatus === "succeeded") {
       updates.status = BOOKING_STATUS.CONFIRMED;
+      
+      // MODIFIED: Now explicitly mark the slot as booked when payment succeeds
+      await ctx.db.patch(slotId, {
+        isBooked: true,
+        lastUpdated: Date.now(),
+      });
     } else if (paymentStatus === "failed") {
       // If payment failed, update booking status to cancelled and make the slot available again
       updates.status = BOOKING_STATUS.CANCELLED;
@@ -320,45 +326,38 @@ export const updateBookingByPaymentIntent = mutation({
       bookingStatus = BOOKING_STATUS.CONFIRMED;
     } else if (status === "completed") {
       bookingStatus = BOOKING_STATUS.COMPLETED;
+    } else if (status === "pending") {
+      bookingStatus = BOOKING_STATUS.PENDING;
     }
     
     // Update the booking
     await ctx.db.patch(booking._id, {
-      status: bookingStatus as "confirmed" | "completed" | "cancelled" | "refunded",
+      status: bookingStatus as "pending" | "confirmed" | "completed" | "cancelled" | "refunded",
       paymentStatus: paymentStatus as "pending" | "processing" | "succeeded" | "failed" | "cancelled" | "refunded",
     });
     
-    // If status is cancelled or refunded, make the slot available again
-    if (
-      bookingStatus === BOOKING_STATUS.CANCELLED || 
-      bookingStatus === BOOKING_STATUS.REFUNDED
-    ) {
-      // Make the slot available again
-      await ctx.db.patch(booking.slotId, {
+    // If the status is changing to confirmed, make sure the slot is marked as booked
+    if (bookingStatus === BOOKING_STATUS.CONFIRMED) {
+      // Get the slot ID from the booking
+      const slotId = booking.slotId;
+      
+      // Update the slot to be booked
+      await ctx.db.patch(slotId, {
+        isBooked: true,
+        lastUpdated: Date.now(),
+      });
+    }
+    
+    // If the status is changing to cancelled or refunded, make the slot available again
+    if (bookingStatus === BOOKING_STATUS.CANCELLED || bookingStatus === BOOKING_STATUS.REFUNDED) {
+      // Get the slot ID from the booking
+      const slotId = booking.slotId;
+      
+      // Update the slot to be available
+      await ctx.db.patch(slotId, {
         isBooked: false,
         lastUpdated: Date.now(),
       });
-      
-      // Find and update the appointment
-      const slot = await ctx.db.get(booking.slotId);
-      if (!slot) return booking._id;
-      
-      const appointments = await ctx.db
-        .query("appointments")
-        .withIndex("by_barber", (q) => q.eq("barberId", booking.barberId))
-        .filter((q) => 
-          q.eq(q.field("startTime"), slot.startTime) && 
-          q.eq(q.field("date"), formatDateForStorage(slot.date))
-        )
-        .collect();
-      
-      if (appointments.length > 0) {
-        // Update the appointment status
-        await ctx.db.patch(appointments[0]._id, {
-          status: bookingStatus === BOOKING_STATUS.REFUNDED ? "refunded" : "cancelled",
-          paymentStatus,
-        });
-      }
     }
     
     return booking._id;

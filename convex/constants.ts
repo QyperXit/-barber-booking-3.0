@@ -1,6 +1,7 @@
 // convex/constants.ts
 // Booking status constants
 export const BOOKING_STATUS = {
+  PENDING: "pending",
   CONFIRMED: "confirmed",
   COMPLETED: "completed", 
   CANCELLED: "cancelled",
