@@ -16,6 +16,7 @@ This is a barber booking application built with Next.js 15.2.2 and Convex for th
 - **Backend**: Convex for database, API, and serverless functions
 - **Authentication**: Clerk for user authentication
 - **Styling**: UI components from Shadcn UI (based on component imports)
+- **Payments**: Stripe Connect for payment processing
 
 ## Directory Structure
 
@@ -30,6 +31,12 @@ This is a barber booking application built with Next.js 15.2.2 and Convex for th
   - **/admin**: Admin dashboard pages
   - **/cleanup**: Utility pages for data cleanup
   - **/api**: API routes
+    - **/stripe**: Stripe API endpoints
+      - **/create-connect-account**: Create Stripe Connect account for barbers
+      - **/create-account-link**: Generate onboarding links for Stripe Connect
+      - **/create-checkout-session**: Create payment sessions for bookings
+    - **/webhooks**: Webhook endpoints
+      - **/stripe**: Stripe webhook handler for payment events
   - **/actions**: Server actions
 
 - **/convex**: Convex backend code
@@ -38,6 +45,7 @@ This is a barber booking application built with Next.js 15.2.2 and Convex for th
   - **/bookings.ts**: Booking management functions
   - **/appointments.ts**: Appointment management functions 
   - **/barbers.ts**: Barber management functions
+  - **/users.ts**: User management functions
   - **/availabilityTemplates.ts**: Functions for managing barber availability templates
   - **/crons.ts**: Scheduled tasks
   - **/constants.ts**: Application constants
@@ -47,17 +55,54 @@ This is a barber booking application built with Next.js 15.2.2 and Convex for th
 - **/lib**: Utility functions and helper code
   - **/utils.ts**: General utility functions
   - **/roles.ts**: User role management
+  - **/stripe.ts**: Stripe payment utilities
 
 ## Core Data Models
 
 1. **barbers**: Barber profiles with name, description, userId, image, and active status
-2. **slots**: Time slots for bookings with barberId, date, start/end times, booking status
+   - Added Stripe Connect fields: stripeAccountId, stripeAccountOnboardingComplete, stripeAccountPayoutsEnabled, stripeAccountChargesEnabled
+2. **slots**: Time slots for bookings with barberId, date, start/end times, booking status, and price
 3. **barberAvailabilityTemplates**: Templates for barber availability by day of week
-4. **appointments**: Records of appointments with user and barber information
-5. **bookings**: Records of slot bookings with payment and status information
-6. **users**: User profiles with authentication information
+4. **appointments**: Records of appointments with user and barber information, including payment status
+5. **bookings**: Records of slot bookings with payment (paymentIntentId, paymentStatus, stripeSessionId) and status information
+6. **users**: User profiles with authentication information and Stripe customer ID
 
 ## Key Features and Functionality
+
+### Booking Flow with Payments
+
+1. Users visit the booking page for a specific barber (`/book/[barberId]`)
+2. The page loads available slots for the selected date from the `slots` table
+3. If no slots exist, it attempts to generate slots from the barber's availability template
+4. Users can select a slot and service, then initiate a booking
+5. A booking record is created with "pending" payment status
+6. User is redirected to Stripe Checkout to complete payment
+7. Upon successful payment, the Stripe webhook updates the booking status to "confirmed"
+8. An appointment record is created/updated to reflect the payment status
+
+### Barber Stripe Connect Setup
+
+1. Barbers access the dashboard and use the Stripe Connect component to connect a payment account
+2. They are redirected to Stripe's onboarding flow to set up their account
+   - Note: Even in test mode, Stripe requires using a real email address for verification
+   - All other details can use test data (e.g., test bank account numbers)
+3. Upon completion, barber accounts show payment enabled status
+4. Payments made by customers are sent directly to the barber's Stripe account with platform fees
+5. Test transactions use a 10% platform fee that goes to the platform account
+
+### Stripe Webhook Handling
+
+The application processes the following Stripe webhook events:
+- `checkout.session.completed`: Marks bookings as confirmed when payment is completed
+  - Includes receipt URL for the customer (cast as `(session as any).receipt_url` due to Stripe types)
+- `payment_intent.succeeded`: Records successful payments
+- `payment_intent.payment_failed`: Handles failed payments
+- `charge.refunded`: Processes refunds
+- `account.updated`: Updates barber Stripe Connect account status
+
+The webhook handler employs type casting in two key areas:
+1. For the receipt URL which isn't included in Stripe's TypeScript definitions
+2. For status values in payment and booking updates to ensure type safety
 
 ### Booking Flow
 
@@ -426,3 +471,20 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 - **Build for production**: `npm run build`
 - **Lint code**: `npm run lint`
 - **Run tests**: `npm test` (if tests are set up) 
+
+## Known Issues and Solutions
+
+### Stripe Integration Type Issues
+
+1. **Receipt URL Handling**: The Stripe SDK's TypeScript definitions don't include the `receipt_url` property on checkout sessions, even though it's available in the API response. The application handles this by using a type cast: `(session as any).receipt_url`.
+
+2. **Status String Handling**: When updating booking and payment statuses from webhook events, explicit type casting is used to satisfy TypeScript requirements:
+   ```typescript
+   status: bookingStatus as "confirmed" | "completed" | "cancelled" | "refunded",
+   paymentStatus: paymentStatus as "pending" | "processing" | "succeeded" | "failed" | "cancelled" | "refunded",
+   ```
+
+3. **Stripe Connect Testing**: For testing Stripe Connect:
+   - Use your real email address (required even in test mode)
+   - For bank account details, use test values like routing number `110000000` and account number `000123456789`
+   - For other verification steps, use placeholder data as guided by Stripe's test mode UI 
