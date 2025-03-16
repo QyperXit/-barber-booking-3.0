@@ -30,6 +30,12 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+convex.log
+nextjs.log
+
+# server scripts
+restart-*.sh
+stop-*.sh
 
 # env files (can opt-in for committing if needed)
 .env*
