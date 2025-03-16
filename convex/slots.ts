@@ -264,16 +264,16 @@ export const forceRefresh = mutation({
     // Get all the slot IDs for lookup
     const slotIds = slots.map(slot => slot._id);
     
-    // Find all bookings that are confirmed for this barber
+    // Find all bookings that are paid for this barber
     const bookings = await ctx.db
       .query("bookings")
       .filter(q => q.and(
         q.eq(q.field("barberId"), barberId),
-        q.eq(q.field("status"), "confirmed")
+        q.eq(q.field("status"), "paid")
       ))
       .collect();
     
-    console.log(`Found ${bookings.length} confirmed bookings for this barber`);
+    console.log(`Found ${bookings.length} paid bookings for this barber`);
       
     // Filter to bookings that are for slots on this date
     const bookingsForThisDate = bookings.filter(booking => 

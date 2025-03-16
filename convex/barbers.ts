@@ -29,6 +29,91 @@ export const getByUserId = query({
   },
 });
 
+// Check if a barber has completed Stripe onboarding
+export const hasCompletedStripeOnboarding = query({
+  args: { barberId: v.id("barbers") },
+  handler: async (ctx, { barberId }) => {
+    const barber = await ctx.db.get(barberId);
+    
+    if (!barber) {
+      return {
+        hasStripeAccount: false,
+        onboardingComplete: false
+      };
+    }
+    
+    return {
+      hasStripeAccount: !!barber.stripeAccountId,
+      onboardingComplete: !!barber.stripeAccountOnboardingComplete
+    };
+  },
+});
+
+// Update a barber's Stripe account ID
+export const updateStripeAccountId = mutation({
+  args: {
+    barberId: v.id("barbers"),
+    stripeAccountId: v.string(),
+  },
+  handler: async (ctx, { barberId, stripeAccountId }) => {
+    const barber = await ctx.db.get(barberId);
+    
+    if (!barber) {
+      throw new Error("Barber not found");
+    }
+    
+    await ctx.db.patch(barberId, {
+      stripeAccountId,
+      stripeAccountOnboardingComplete: false,
+      stripeAccountPayoutsEnabled: false,
+      stripeAccountChargesEnabled: false,
+      stripeAccountCreatedAt: Date.now(),
+    });
+    
+    return await ctx.db.get(barberId);
+  },
+});
+
+// Update a barber's Stripe account status
+export const updateStripeAccountStatus = mutation({
+  args: {
+    stripeAccountId: v.string(),
+    onboardingComplete: v.optional(v.boolean()),
+    payoutsEnabled: v.optional(v.boolean()),
+    chargesEnabled: v.optional(v.boolean()),
+  },
+  handler: async (ctx, { stripeAccountId, onboardingComplete, payoutsEnabled, chargesEnabled }) => {
+    // Find the barber with this Stripe account ID
+    const barber = await ctx.db
+      .query("barbers")
+      .withIndex("by_stripe_account", (q) => q.eq("stripeAccountId", stripeAccountId))
+      .first();
+    
+    if (!barber) {
+      throw new Error("Barber with this Stripe account ID not found");
+    }
+    
+    // Update the barber with the new status
+    const updates: Record<string, any> = {};
+    
+    if (onboardingComplete !== undefined) {
+      updates.stripeAccountOnboardingComplete = onboardingComplete;
+    }
+    
+    if (payoutsEnabled !== undefined) {
+      updates.stripeAccountPayoutsEnabled = payoutsEnabled;
+    }
+    
+    if (chargesEnabled !== undefined) {
+      updates.stripeAccountChargesEnabled = chargesEnabled;
+    }
+    
+    await ctx.db.patch(barber._id, updates);
+    
+    return await ctx.db.get(barber._id);
+  },
+});
+
 export const create = mutation({
   args: {
     name: v.string(),

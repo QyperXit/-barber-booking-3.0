@@ -64,6 +64,7 @@ export default defineSchema({
     status: v.union(
       v.literal("pending"),
       v.literal("confirmed"),
+      v.literal("paid"),
       v.literal("completed"),
       v.literal("cancelled"),
       v.literal("refunded")

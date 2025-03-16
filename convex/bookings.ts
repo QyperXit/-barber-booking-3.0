@@ -247,7 +247,7 @@ export const updatePaymentStatus = mutation({
       updates.receiptUrl = receiptUrl;
     }
     
-    // If payment succeeded, update booking status to confirmed
+    // If payment succeeded, update booking status to paid
     if (paymentStatus === "succeeded") {
       updates.status = BOOKING_STATUS.CONFIRMED;
       
@@ -285,9 +285,9 @@ export const updatePaymentStatus = mutation({
         .collect();
       
       if (appointments.length > 0) {
-        // Update the appointment status to confirmed and add payment info
+        // Update the appointment status to paid and add payment info
         await ctx.db.patch(appointments[0]._id, {
-          status: "confirmed",
+          status: "paid",
           paymentStatus: "paid",
           paymentId: paymentIntentId,
         });

@@ -12,6 +12,7 @@ import React, { useEffect, useState } from 'react';
 import { Appointments } from './components/appointments';
 import { Availability } from './components/availability';
 import { Profile } from './components/profile';
+import { StripeConnect } from './components/stripe-connect';
 
 export default function BarberDashboardPage() {
   const { isLoaded, user } = useUser();
@@ -151,6 +152,13 @@ export default function BarberDashboardPage() {
         </TabsContent>
         
         <TabsContent value="settings" className="space-y-4">
+          {/* Stripe Connect Integration */}
+          <StripeConnect 
+            barberId={barberProfile._id} 
+            userEmail={user?.primaryEmailAddress?.emailAddress} 
+            userName={user?.fullName || barberProfile.name}
+          />
+          
           <Card>
             <CardHeader>
               <CardTitle>Account Settings</CardTitle>

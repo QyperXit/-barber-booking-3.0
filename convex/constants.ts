@@ -2,7 +2,7 @@
 // Booking status constants
 export const BOOKING_STATUS = {
   PENDING: "pending",
-  CONFIRMED: "confirmed",
+  CONFIRMED: "paid",
   COMPLETED: "completed", 
   CANCELLED: "cancelled",
   REFUNDED: "refunded",

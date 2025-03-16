@@ -3,6 +3,7 @@ import { Id } from '@/convex/_generated/dataModel';
 import { constructEventFromPayload } from '@/lib/stripe';
 import { ConvexHttpClient } from 'convex/browser';
 import { NextRequest, NextResponse } from 'next/server';
+import Stripe from 'stripe';
 
 // Create a client for Convex
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL as string);
@@ -23,12 +24,12 @@ export async function POST(request: NextRequest) {
     }
     
     // Construct the event from the payload
-    const event = constructEventFromPayload(signature, Buffer.from(payload));
+    const event = await constructEventFromPayload(signature, payload);
     
     // Handle the event based on its type
     switch (event.type) {
       case 'checkout.session.completed': {
-        const session = event.data.object;
+        const session = event.data.object as Stripe.Checkout.Session;
         const { bookingId, slotId, barberId, userId } = session.metadata || {};
         
         if (slotId && barberId) {
@@ -41,6 +42,20 @@ export async function POST(request: NextRequest) {
             stripeSessionId: session.id,
             receiptUrl: (session as any).receipt_url,
           });
+
+          // Also update the appointment status to paid instead of pending
+          // This is needed to ensure the barber dashboard shows the correct status
+          if (bookingId) {
+            try {
+              await convex.mutation(api.appointments.updateStatus, {
+                id: bookingId as Id<'appointments'>,
+                status: 'paid'
+              });
+              console.log(`Updated appointment ${bookingId} status to paid`);
+            } catch (error) {
+              console.error(`Failed to update appointment status: ${error}`);
+            }
+          }
           
           // Force refresh the slots to ensure consistency
           await convex.mutation(api.slots.forceRefresh, {
@@ -54,13 +69,13 @@ export async function POST(request: NextRequest) {
       }
       
       case 'payment_intent.succeeded': {
-        const paymentIntent = event.data.object;
+        const paymentIntent = event.data.object as Stripe.PaymentIntent;
         console.log(`PaymentIntent for ${paymentIntent.amount} was successful!`);
         break;
       }
       
       case 'payment_intent.payment_failed': {
-        const paymentIntent = event.data.object;
+        const paymentIntent = event.data.object as Stripe.PaymentIntent;
         const { slotId, barberId } = paymentIntent.metadata || {};
         
         if (slotId && barberId) {
@@ -78,7 +93,7 @@ export async function POST(request: NextRequest) {
       }
       
       case 'charge.refunded': {
-        const charge = event.data.object;
+        const charge = event.data.object as Stripe.Charge;
         const paymentIntentId = charge.payment_intent as string;
         
         if (paymentIntentId) {
@@ -96,7 +111,7 @@ export async function POST(request: NextRequest) {
       
       // Handle account update events for Stripe Connect
       case 'account.updated': {
-        const account = event.data.object;
+        const account = event.data.object as Stripe.Account;
         
         // Update the barber's Stripe account status in Convex
         await convex.mutation(api.barbers.updateStripeAccountStatus, {

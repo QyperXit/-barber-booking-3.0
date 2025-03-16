@@ -49,6 +49,7 @@ This is a barber booking application built with Next.js 15.2.2 and Convex for th
   - **/availabilityTemplates.ts**: Functions for managing barber availability templates
   - **/crons.ts**: Scheduled tasks
   - **/constants.ts**: Application constants
+  - **/migrations.ts**: Database migration functions
   - **/_generated/**: Auto-generated API code
 
 - **/components**: Reusable UI components
@@ -77,7 +78,7 @@ This is a barber booking application built with Next.js 15.2.2 and Convex for th
 4. Users can select a slot and service, then initiate a booking
 5. A booking record is created with "pending" payment status
 6. User is redirected to Stripe Checkout to complete payment
-7. Upon successful payment, the Stripe webhook updates the booking status to "confirmed"
+7. Upon successful payment, the Stripe webhook updates the booking status to "paid"
 8. An appointment record is created/updated to reflect the payment status
 
 ### Barber Stripe Connect Setup
@@ -93,7 +94,7 @@ This is a barber booking application built with Next.js 15.2.2 and Convex for th
 ### Stripe Webhook Handling
 
 The application processes the following Stripe webhook events:
-- `checkout.session.completed`: Marks bookings as confirmed when payment is completed
+- `checkout.session.completed`: Marks bookings as paid when payment is completed
   - Includes receipt URL for the customer (cast as `(session as any).receipt_url` due to Stripe types)
 - `payment_intent.succeeded`: Records successful payments
 - `payment_intent.payment_failed`: Handles failed payments
@@ -134,6 +135,7 @@ Barbers can:
 1. Set their availability by day of week using the availability component
 2. View and manage their appointments
 3. Update their profile information
+4. Connect their Stripe account through the Settings tab in the dashboard
 
 ## Key Functions
 
@@ -297,25 +299,38 @@ const handleForceRefresh = async () => {
 
 ## Recent Changes and Development Status
 
-### Latest Updates (March 15, 2024)
+### Latest Updates (July 2024)
 
-1. **Fixed Slot Availability Issue**: Modified the `updateAvailability` function in `convex/slots.ts` to mark cleared slots as unavailable instead of deleting them. This ensures that when a barber clears a slot from their dashboard, it's properly reflected in the booking page as unavailable.
+1. **Fixed Status Terminology Consistency**: Modified the booking status system to use "paid" instead of "confirmed" consistently across the codebase:
+   - Updated `BOOKING_STATUS.CONFIRMED` in constants.ts to use "paid" instead of "confirmed"
+   - Added "paid" as a valid status value in schema.ts for bookings
+   - Updated all functions in bookings.ts to use "paid" status instead of "confirmed"
+   - Updated references in slots.ts to search for bookings with "paid" status
+   - Added a migration function in migrations.ts to update existing records from "confirmed" to "paid"
 
-2. **Enhanced Booking Page Functionality**:
+2. **Added Stripe Connect Component**: Implemented Stripe Connect integration in the barber dashboard:
+   - Created a new StripeConnect component to allow barbers to connect their Stripe accounts
+   - Added the component to the Settings tab in the barber dashboard
+   - Integrated with Stripe Connect API endpoints for account creation and onboarding
+
+3. **Fixed Stripe Integration**: Implemented complete Stripe API routes:
+   - Added `/api/stripe/create-checkout-session/route.ts`
+   - Added `/api/stripe/create-connect-account/route.ts`
+   - Added `/api/stripe/create-account-link/route.ts`
+   - Updated the webhook handler to correctly process payment confirmations
+
+4. **Fixed Slot Availability Issue**: Modified the `updateAvailability` function in `convex/slots.ts` to mark cleared slots as unavailable instead of deleting them. This ensures that when a barber clears a slot from their dashboard, it's properly reflected in the booking page as unavailable.
+
+5. **Enhanced Booking Page Functionality**:
    - Added a new "Not Available" section in the booking UI to display slots specifically marked as unavailable by the barber
    - Improved the date change handling to automatically force a refresh when changing dates
    - Enhanced the slot initialization process to check both string and timestamp formats
 
-3. **Improved Debugging**: Added detailed logging throughout the slots management process to help identify issues with slot availability and visibility.
+6. **Improved Debugging**: Added detailed logging throughout the slots management process to help identify issues with slot availability and visibility.
 
-4. **Known Issues**:
+7. **Known Issues**:
    - TypeScript error in the `updateAvailability` function related to the `time` variable being treated as `unknown` when iterating over a Set
    - "No slots found for this date and barber" message may still appear occasionally, requiring a manual refresh
-
-5. **Next Steps**:
-   - Fix remaining TypeScript errors in the `updateAvailability` function
-   - Improve the sync between barber dashboard and booking page
-   - Enhance error handling for missing slots or templates
 
 ## Getting Started
 
@@ -330,7 +345,9 @@ const handleForceRefresh = async () => {
    - Falls back to `seedSlots` if no template exists
 4. **User selects a time slot** and service
 5. **`handleBooking`** creates a booking record with `createBooking` mutation
-6. **User is redirected** to appointments page
+6. **User is redirected** to Stripe Checkout for payment
+7. **After successful payment** the Stripe webhook updates the booking status to "paid"
+8. **User is directed** to the appointments page showing their confirmed booking
 
 ### Barber Dashboard Flow
 
@@ -339,6 +356,7 @@ const handleForceRefresh = async () => {
 3. **`updateAvailability`** mutation creates slots for the next 4 weeks based on templates
 4. **`cleanupSlots`** mutation removes unused slots beyond the retention window
 5. **Barber views appointments** that have been booked
+6. **Barber connects Stripe account** through the Settings tab to receive payments
 
 ## API Usage Examples
 
@@ -491,7 +509,7 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
    ```typescript
    // In convex/bookings.ts
    await ctx.db.patch(booking._id, {
-     status: bookingStatus as "pending" | "confirmed" | "completed" | "cancelled" | "refunded",
+     status: bookingStatus as "pending" | "confirmed" | "paid" | "completed" | "cancelled" | "refunded",
      paymentStatus: paymentStatus as "pending" | "processing" | "succeeded" | "failed" | "cancelled" | "refunded",
    });
    ```
@@ -522,9 +540,9 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 
    ```typescript
    // In convex/bookings.ts - updatePaymentStatus function
-   // If payment succeeded, update booking status to confirmed
+   // If payment succeeded, update booking status to paid (previously "confirmed")
    if (paymentStatus === "succeeded") {
-     updates.status = BOOKING_STATUS.CONFIRMED;
+     updates.status = BOOKING_STATUS.CONFIRMED; // This now maps to "paid" in constants.ts
      
      // Now explicitly mark the slot as booked when payment succeeds
      await ctx.db.patch(slotId, {

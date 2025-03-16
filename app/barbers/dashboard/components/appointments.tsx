@@ -15,6 +15,7 @@ export function Appointments({ barberId }: AppointmentsProps) {
   const { toast } = useToast();
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedDate, setSelectedDate] = useState<string>(formatDate(new Date()));
+  const [updatingStatuses, setUpdatingStatuses] = useState(false);
   
   console.log("Selected date for appointments:", selectedDate);
   
@@ -133,6 +134,55 @@ export function Appointments({ barberId }: AppointmentsProps) {
     return dates;
   };
   
+  // New function to update pending appointments to paid if they've been paid for
+  const handleUpdatePendingAppointments = async () => {
+    if (!appointments || appointments.length === 0) return;
+    
+    setUpdatingStatuses(true);
+    
+    try {
+      // Find all pending appointments
+      const pendingAppointments = appointments.filter(app => app.status === 'pending');
+      
+      if (pendingAppointments.length === 0) {
+        toast({
+          title: "No pending appointments",
+          description: "There are no pending appointments to update.",
+        });
+        setUpdatingStatuses(false);
+        return;
+      }
+      
+      // Update each one to paid
+      let updatedCount = 0;
+      for (const appointment of pendingAppointments) {
+        try {
+          await updateAppointmentStatus({
+            id: appointment._id,
+            status: 'paid'
+          });
+          updatedCount++;
+        } catch (error) {
+          console.error(`Error updating appointment ${appointment._id}:`, error);
+        }
+      }
+      
+      toast({
+        title: "Appointments Updated",
+        description: `Updated ${updatedCount} appointments from pending to paid.`,
+      });
+    } catch (error) {
+      console.error("Error updating appointments:", error);
+      toast({
+        title: "Update Failed",
+        description: "Failed to update appointment statuses.",
+        variant: "destructive",
+      });
+    } finally {
+      setUpdatingStatuses(false);
+    }
+  };
+  
   if (!appointments) {
     return (
       <Card className="w-full">
@@ -186,6 +236,13 @@ export function Appointments({ barberId }: AppointmentsProps) {
             Pending
           </Button>
           <Button
+            variant={selectedStatus === 'paid' ? "default" : "outline"}
+            onClick={() => setSelectedStatus('paid')}
+            size="sm"
+          >
+            Paid
+          </Button>
+          <Button
             variant={selectedStatus === 'completed' ? "default" : "outline"}
             onClick={() => setSelectedStatus('completed')}
             size="sm"
@@ -200,12 +257,27 @@ export function Appointments({ barberId }: AppointmentsProps) {
             Cancelled
           </Button>
         </div>
+        
+        {/* Add a button to update all pending appointments */}
+        <div className="mt-4 pt-2 border-t">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={handleUpdatePendingAppointments}
+            disabled={updatingStatuses}
+          >
+            {updatingStatuses ? "Updating..." : "Update Pending to Paid"}
+          </Button>
+          <p className="text-xs text-muted-foreground mt-1">
+            Use this button to update any appointments that are marked as "pending" but have already been paid for.
+          </p>
+        </div>
       </CardHeader>
       <CardContent>
         {filteredAppointments.length === 0 ? (
           <div className="text-center py-6 text-muted-foreground">
             No {selectedStatus !== 'all' ? selectedStatus : ''} appointments found
-            {selectedStatus === 'pending' ? ` for ${selectedDate}` : ''}.
+            {selectedStatus === 'pending' || selectedStatus === 'paid' ? ` for ${selectedDate}` : ''}.
           </div>
         ) : (
           <div className="space-y-4">
@@ -223,7 +295,8 @@ export function Appointments({ barberId }: AppointmentsProps) {
                     Services: {appointment.services.join(', ')}
                   </div>
                   <div className={`text-sm font-medium ${
-                    appointment.status === 'pending' ? 'text-blue-500' :
+                    appointment.status === 'pending' ? 'text-yellow-500' :
+                    appointment.status === 'paid' ? 'text-blue-500' :
                     appointment.status === 'completed' ? 'text-green-500' :
                     'text-red-500'
                   }`}>
@@ -231,7 +304,7 @@ export function Appointments({ barberId }: AppointmentsProps) {
                   </div>
                 </div>
                 
-                {appointment.status === 'pending' && (
+                {(appointment.status === 'pending' || appointment.status === 'paid') && (
                   <div className="flex space-x-2 mt-4 md:mt-0">
                     <Button
                       variant="outline"
