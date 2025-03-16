@@ -354,8 +354,21 @@ The application uses a `.env.local` file with the following variables:
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=...
 CLERK_SECRET_KEY=...
 
+# Clerk URLs
+NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
+NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
+NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL=/
+NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL=/
+
 # Convex Backend
+CONVEX_DEPLOYMENT=dev:your-deployment-id # team: your-team, project: your-project
 NEXT_PUBLIC_CONVEX_URL=...
+
+# Stripe Payment Processing
+STRIPE_SECRET_KEY=...
+STRIPE_WEBHOOK_SECRET=...
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=... # Ensure no spaces or hidden characters
+STRIPE_CONNECT_CLIENT_ID=... # For Stripe Connect integration
 
 # Application Configuration
 NEXT_PUBLIC_APP_URL=http://localhost:3000
@@ -381,6 +394,8 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 4. Access the application at:
    - Application: http://localhost:3000
    - Convex Dashboard: http://localhost:8000
+
+5. **Note**: Stripe CLI is installed in this project for testing Stripe payment integration in the future.
 
 ### Common Development Commands
 
