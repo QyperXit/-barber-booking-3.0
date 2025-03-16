@@ -27,6 +27,16 @@ This application is the third iteration of the G|Barbers platform, representing 
 - **Real-time Updates**: All changes to availability and bookings are reflected in real-time
 - **Responsive UI**: Works seamlessly on mobile and desktop devices
 
+## Coming Soon
+
+We're actively working on additional features and improvements for G|Barbers 3.0:
+
+- **Enhanced Analytics**: Detailed insights for barbers to track business performance
+- **Email Notifications**: Automated reminders and booking confirmations
+- **Mobile App**: Native mobile experience for both customers and barbers
+- **Advanced Scheduling**: Support for recurring appointments and package bookings
+- **Public Deployment**: Production deployment coming soon!
+
 ## Tech Stack
 
 - **Frontend**: Next.js 15.2.2 with React 19.0.0
