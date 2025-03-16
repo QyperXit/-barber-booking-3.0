@@ -1,15 +1,39 @@
-# Barber Booking Application
+# G|Barbers 3.0 - Advanced Barber Booking Platform
 
-A modern web application that allows customers to book appointments with barbers and lets barbers manage their availability and appointments.
+A modern, full-featured barber booking application that allows customers to book appointments with barbers and lets barbers manage their availability, appointments, and payments. This is version 3.0 of the G|Barbers platform, completely rebuilt with the latest technologies.
+
+## Evolution from Previous Versions
+
+This application is the third iteration of the G|Barbers platform, representing a significant technological upgrade:
+
+- **Version 1.0**: Initial concept with basic booking functionality
+- **Version 2.0**: Added user authentication and basic barber management using Next.js, TailwindCSS, Kinde Authentication, and Strapi backend
+- **Version 3.0** (Current): Complete rebuild with Next.js 15, Convex backend, Clerk authentication, and Stripe payment processing
+
+## Key Improvements in Version 3.0
+
+- **Modern Tech Stack**: Upgraded from Strapi to Convex for real-time database and serverless functions
+- **Enhanced Authentication**: Migrated from Kinde to Clerk for more robust user management
+- **Payment Processing**: Added Stripe integration with Connect for barber payments
+- **Real-time Updates**: All changes to availability and bookings are reflected instantly
+- **Improved Barber Dashboard**: Comprehensive tools for availability management and appointment tracking
+- **Responsive Design**: Fully responsive UI built with Shadcn UI components
 
 ## Features
 
 - **Customer Booking**: Users can browse available barbers, select dates, and book available time slots
 - **Barber Dashboard**: Barbers can set their availability, view upcoming appointments, and manage their schedule
+- **Payment Processing**: Integrated Stripe payments with barber payouts via Stripe Connect
 - **Real-time Updates**: All changes to availability and bookings are reflected in real-time
-- **Responsive UI**: Works on mobile and desktop devices
+- **Responsive UI**: Works seamlessly on mobile and desktop devices
 
-For detailed documentation, see [PROJECT_REFERENCE.md](./PROJECT_REFERENCE.md).
+## Tech Stack
+
+- **Frontend**: Next.js 15.2.2 with React 19.0.0
+- **Backend**: Convex for database, API, and serverless functions
+- **Authentication**: Clerk for user authentication
+- **Styling**: Shadcn UI components
+- **Payments**: Stripe Connect for payment processing
 
 ---
 
