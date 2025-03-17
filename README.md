@@ -27,6 +27,14 @@ This application is the third iteration of the G|Barbers platform, representing 
 - **Real-time Updates**: All changes to availability and bookings are reflected in real-time
 - **Responsive UI**: Works seamlessly on mobile and desktop devices
 
+## Real-Time Demo
+
+Check out this video demonstration of our real-time updates in action:
+
+https://github.com/QyperXit/-barber-booking-3.0/blob/main/example.mp4
+
+The video showcases how changes made by barbers to their availability are instantly reflected in the booking interface, providing a seamless experience for both barbers and customers.
+
 ## Coming Soon
 
 We're actively working on additional features and improvements for G|Barbers 3.0:
