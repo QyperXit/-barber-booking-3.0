@@ -1,4 +1,4 @@
-# G|Barbers 3.0 - Advanced Barber Booking Platform
+# G|Barbers 3.0 - Beta - Barber Booking Platform
 
 A modern, full-featured barber booking application that allows customers to book appointments with barbers and lets barbers manage their availability, appointments, and payments. This is version 3.0 of the G|Barbers platform, completely rebuilt with the latest technologies.
 
@@ -6,7 +6,7 @@ A modern, full-featured barber booking application that allows customers to book
 
 This application is the third iteration of the G|Barbers platform, representing a significant technological upgrade:
 
-- **Version 1.0**: Initial concept with basic booking functionality
+- **Version 1.0**: Initial concept with basic booking functionality (built with vanilla JavaScript)
 - **Version 2.0**: Added user authentication and basic barber management using Next.js, TailwindCSS, Kinde Authentication, and Strapi backend
 - **Version 3.0** (Current): Complete rebuild with Next.js 15, Convex backend, Clerk authentication, and Stripe payment processing
 
@@ -41,11 +41,11 @@ The booking system features a sophisticated synchronization mechanism:
 
 ## Real-Time Demo
 
-Check out this video demonstration of our real-time updates in action:
+Check out this GIF demonstration of our real-time updates in action:
 
-https://github.com/QyperXit/-barber-booking-3.0/blob/main/example.mp4
+![Real-Time Demo](example.gif)
 
-The video showcases how changes made by barbers to their availability are instantly reflected in the booking interface, providing a seamless experience for both barbers and customers.
+The GIF showcases how changes made by barbers to their availability are instantly reflected in the booking interface, providing a seamless experience for both barbers and customers.
 
 ## Coming Soon
 
