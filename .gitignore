@@ -40,6 +40,8 @@ stop-*.sh
 
 # project documentation
 PROJECT_REFERENCE.md
+BOOKING_SYSTEM_ARCHITECTURE.md
+
 
 # env files (can opt-in for committing if needed)
 .env*

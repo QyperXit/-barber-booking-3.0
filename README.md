@@ -18,6 +18,7 @@ This application is the third iteration of the G|Barbers platform, representing 
 - **Real-time Updates**: All changes to availability and bookings are reflected instantly
 - **Improved Barber Dashboard**: Comprehensive tools for availability management and appointment tracking
 - **Responsive Design**: Fully responsive UI built with Shadcn UI components
+- **Enhanced Booking System**: Robust synchronization between bookings, appointments, and slot availability
 
 ## Features
 
@@ -26,6 +27,17 @@ This application is the third iteration of the G|Barbers platform, representing 
 - **Payment Processing**: Integrated Stripe payments with barber payouts via Stripe Connect
 - **Real-time Updates**: All changes to availability and bookings are reflected in real-time
 - **Responsive UI**: Works seamlessly on mobile and desktop devices
+- **Automatic Synchronization**: Bookings, appointments, and available slots stay in perfect sync
+
+## Booking System Architecture
+
+The booking system features a sophisticated synchronization mechanism:
+
+- **Direct Relationships**: Bookings and appointments have two-way references for reliable tracking
+- **Immediate Slot Reservation**: Slots are marked as booked immediately upon booking initiation
+- **Payment Status Synchronization**: Appointment statuses are automatically updated when payments succeed
+- **Periodic Sync Job**: A background job runs every 10 minutes to ensure data consistency
+- **Enhanced Webhook Handling**: Robust Stripe webhook processing ensures reliable payment status updates
 
 ## Real-Time Demo
 
@@ -52,6 +64,23 @@ We're actively working on additional features and improvements for G|Barbers 3.0
 - **Authentication**: Clerk for user authentication
 - **Styling**: Shadcn UI components
 - **Payments**: Stripe Connect for payment processing
+- **Database**: Convex real-time database with schema relationships
+
+## System Architecture
+
+### Data Model
+- **Bookings**: Tracks payment status and links to slots, barbers, users, and appointments
+- **Appointments**: Customer-facing representation of bookings with service information
+- **Slots**: Time slots that can be booked, with availability and booking status
+- **Barbers**: Information about service providers, including Stripe Connect integration
+- **Users**: Customer information and authentication details
+
+### Synchronization Flow
+1. User initiates booking → Slot marked as temporarily booked
+2. Payment processed → Booking status updated to "confirmed" 
+3. Appointment status automatically synced to "paid"
+4. Barber dashboard refreshes in real-time to show the updated appointment
+5. Periodic sync job ensures consistency between all related records
 
 ---
 
