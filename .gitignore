@@ -42,6 +42,7 @@ stop-*.sh
 PROJECT_REFERENCE.md
 BOOKING_SYSTEM_ARCHITECTURE.md
 convex/README.md
+BOOKING_SYSTEM.md
 
 
 # env files (can opt-in for committing if needed)
