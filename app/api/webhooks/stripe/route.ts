@@ -33,35 +33,47 @@ export async function POST(request: NextRequest) {
         const { bookingId, slotId, barberId, userId } = session.metadata || {};
         
         if (slotId && barberId) {
-          // Update the booking in Convex
-          await convex.mutation(api.bookings.updatePaymentStatus, {
-            slotId: slotId as Id<'slots'>,
-            barberId: barberId as Id<'barbers'>,
-            paymentIntentId: session.payment_intent as string,
-            paymentStatus: 'succeeded',
-            stripeSessionId: session.id,
-            receiptUrl: (session as any).receipt_url,
-          });
+          try {
+            // CRITICAL FIX: Explicitly mark the slot as booked first
+            await convex.mutation(api.slots.forceUpdateSlotStatus, {
+              slotId: slotId as Id<'slots'>,
+              isBooked: true,
+              lastUpdated: Date.now()
+            });
+            
+            console.log(`Explicitly marked slot ${slotId} as booked`);
+            
+            // Update booking payment status - this will also mark the slot as booked
+            await convex.mutation(api.bookings.updatePaymentStatus, {
+              slotId: slotId as Id<'slots'>,
+              barberId: barberId as Id<'barbers'>,
+              paymentIntentId: session.payment_intent as string,
+              paymentStatus: 'succeeded',
+              stripeSessionId: session.id,
+              receiptUrl: (session as any).receipt_url,
+            });
 
-          // Also update the appointment status to paid instead of pending
-          // This is needed to ensure the barber dashboard shows the correct status
-          if (bookingId) {
-            try {
-              await convex.mutation(api.appointments.updateStatus, {
-                id: bookingId as Id<'appointments'>,
-                status: 'paid'
+            console.log(`Updated booking payment status for slot ${slotId}`);
+
+            // Use our new synchronization function to update both booking and appointment
+            if (bookingId) {
+              await convex.mutation(api.bookings.updateBookingAndAppointmentStatus, {
+                bookingId: bookingId as Id<'bookings'>,
+                status: 'confirmed',
+                paymentStatus: 'succeeded'
               });
-              console.log(`Updated appointment ${bookingId} status to paid`);
-            } catch (error) {
-              console.error(`Failed to update appointment status: ${error}`);
+              
+              console.log(`Updated booking and appointment status for booking ${bookingId}`);
             }
+            
+            // Force refresh the slots to ensure consistency
+            await convex.mutation(api.slots.forceRefresh, {
+              barberId: barberId as Id<'barbers'>,
+              date: new Date().toISOString().split('T')[0] // Use today's date
+            });
+          } catch (error) {
+            console.error('Error processing checkout.session.completed:', error);
           }
-          
-          // Force refresh the slots to ensure consistency
-          await convex.mutation(api.slots.forceRefresh, {
-            barberId: barberId as Id<'barbers'>,
-            date: new Date().toISOString().split('T')[0] // Use today's date
-          });
         }
         
         console.log(`Payment succeeded for booking with payment intent: ${session.payment_intent}`);
@@ -79,13 +91,32 @@ export async function POST(request: NextRequest) {
         const { slotId, barberId } = paymentIntent.metadata || {};
         
         if (slotId && barberId) {
-          // Update the booking in Convex
-          await convex.mutation(api.bookings.updatePaymentStatus, {
-            slotId: slotId as Id<'slots'>,
-            barberId: barberId as Id<'barbers'>,
-            paymentIntentId: paymentIntent.id,
-            paymentStatus: 'failed',
-          });
+          try {
+            // Explicitly mark the slot as not booked first
+            await convex.mutation(api.slots.forceUpdateSlotStatus, {
+              slotId: slotId as Id<'slots'>,
+              isBooked: false,
+              lastUpdated: Date.now()
+            });
+            
+            console.log(`Explicitly marked slot ${slotId} as available after payment failure`);
+            
+            // Update the booking in Convex
+            await convex.mutation(api.bookings.updatePaymentStatus, {
+              slotId: slotId as Id<'slots'>,
+              barberId: barberId as Id<'barbers'>,
+              paymentIntentId: paymentIntent.id,
+              paymentStatus: 'failed',
+            });
+            
+            // Force refresh the slots to ensure consistency
+            await convex.mutation(api.slots.forceRefresh, {
+              barberId: barberId as Id<'barbers'>,
+              date: new Date().toISOString().split('T')[0] // Use today's date
+            });
+          } catch (error) {
+            console.error('Error processing payment_intent.payment_failed:', error);
+          }
         }
         
         console.log(`Payment failed for payment intent: ${paymentIntent.id}`);

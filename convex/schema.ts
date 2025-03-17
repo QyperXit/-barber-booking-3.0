@@ -52,9 +52,12 @@ export default defineSchema({
     // Payment-related fields
     paymentStatus: v.optional(v.string()),
     paymentId: v.optional(v.string()),
+    // Add direct reference to booking
+    bookingId: v.optional(v.id("bookings")),
   }).index("by_user", ["userId"])
     .index("by_barber", ["barberId"])
-    .index("by_date", ["date"]),
+    .index("by_date", ["date"])
+    .index("by_booking", ["bookingId"]),
   
   bookings: defineTable({
     slotId: v.id("slots"),
@@ -83,6 +86,8 @@ export default defineSchema({
     currency: v.optional(v.string()),
     receiptUrl: v.optional(v.string()),
     stripeSessionId: v.optional(v.string()),
+    // Add direct reference to appointment
+    appointmentId: v.optional(v.id("appointments")),
   }).index("by_slot", ["slotId"])
     .index("by_barber", ["barberId"])
     .index("by_user", ["userId"])

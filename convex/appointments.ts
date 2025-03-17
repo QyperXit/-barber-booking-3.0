@@ -36,6 +36,26 @@ export const getByBarberId = query({
   },
 });
 
+// Add a more aggressive real-time version of the query with shorter cache time
+export const getByBarberIdRealtime = query({
+  args: { 
+    barberId: v.id("barbers"),
+    refresh: v.optional(v.boolean()) // Used to force refresh from client
+  },
+  handler: async (ctx, { barberId, refresh }) => {
+    // Log an aggressive refresh request
+    console.log(`Real-time query for appointments of barber ${barberId}, refresh: ${refresh}`);
+    
+    // Use the same logic as the regular query
+    const appointments = await ctx.db
+      .query("appointments")
+      .withIndex("by_barber", (q) => q.eq("barberId", barberId))
+      .collect();
+    
+    return appointments;
+  }
+});
+
 export const create = mutation({
   args: {
     userId: v.string(),
@@ -124,4 +144,17 @@ export const updateStatus = mutation({
     
     return await ctx.db.get(id);
   },
+});
+
+// Add a trigger refresh mutation
+export const triggerRefresh = mutation({
+  args: {
+    barberId: v.id("barbers")
+  },
+  handler: async (ctx, { barberId }) => {
+    // This is just a dummy mutation that doesn't actually change data
+    // But it will trigger subscriptions to refresh
+    console.log(`Triggering refresh for barber: ${barberId} at ${new Date().toISOString()}`);
+    return { refreshed: true, timestamp: Date.now() };
+  }
 }); 

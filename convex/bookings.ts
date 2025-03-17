@@ -83,11 +83,11 @@ export const create = mutation({
     // Use the user's name from the database, or the provided userName, or a better default
     const customerName = user?.name || userName || "Guest User";
     
-    // MODIFIED: We don't mark the slot as booked yet, we wait for payment confirmation
-    // Only mark the slot as reserved temporarily
+    // CRITICAL: Immediately mark the slot as booked to prevent double bookings
+    console.log(`Marking slot ${slotId} as booked for initial booking by user ${userId}`);
     await ctx.db.patch(slotId, { 
+      isBooked: true, // Immediately mark as booked to prevent double bookings
       lastUpdated: Date.now()
-      // isBooked flag will be set after payment confirmation
     });
     
     // Create the booking with PENDING status instead of CONFIRMED
@@ -109,7 +109,7 @@ export const create = mutation({
     
     // Create a corresponding appointment
     try {
-      await ctx.db.insert("appointments", {
+      const appointmentId = await ctx.db.insert("appointments", {
         userId,
         userName: customerName,
         barberId: slot.barberId,
@@ -121,7 +121,14 @@ export const create = mutation({
         status: "pending",
         createdAt: new Date().toISOString(),
         paymentStatus: "pending", // Initial payment status
+        bookingId: bookingId, // Link to the booking
       });
+      
+      // Update the booking with the appointmentId for two-way reference
+      await ctx.db.patch(bookingId, {
+        appointmentId: appointmentId
+      });
+      
       console.log("Created appointment for booking", bookingId, "with date", dateString);
     } catch (error) {
       console.error("Failed to create appointment:", error);
@@ -146,17 +153,25 @@ export const cancel = mutation({
       status: BOOKING_STATUS.CANCELLED 
     });
     
-    // Update the slot to be available again
+    // CRITICAL: Explicitly mark the slot as available again
+    console.log(`Marking slot ${booking.slotId} as available after booking cancellation`);
     await ctx.db.patch(booking.slotId, { 
       isBooked: false,
       lastUpdated: Date.now()
     });
     
-    // Get the slot to find the appointment
+    // Force refresh all slots for this barber on this date
     const slot = await ctx.db.get(booking.slotId);
     if (slot) {
-      // Find and update the corresponding appointment
       try {
+        // Extra patch to ensure slot is really marked as not booked
+        await ctx.db.patch(slot._id, {
+          isBooked: false,
+          lastUpdated: Date.now()
+        });
+        console.log(`Successfully marked slot ${slot._id} as not booked`);
+        
+        // Find and update the corresponding appointment
         // Find appointments for this user and barber
         const appointments = await ctx.db
           .query("appointments")
@@ -177,7 +192,7 @@ export const cancel = mutation({
           console.log("Updated appointment status to cancelled", matchingAppointment._id);
         }
       } catch (error) {
-        console.error("Failed to update appointment status:", error);
+        console.error(`Error updating slot or appointment: ${error}`);
       }
     }
     
@@ -362,4 +377,181 @@ export const updateBookingByPaymentIntent = mutation({
     
     return booking._id;
   },
+});
+
+// Add a synchronized update function for both booking and appointment
+export const updateBookingAndAppointmentStatus = mutation({
+  args: {
+    bookingId: v.id("bookings"),
+    status: v.string(),
+    paymentStatus: v.string(),
+  },
+  handler: async (ctx, { bookingId, status, paymentStatus }) => {
+    const booking = await ctx.db.get(bookingId);
+    if (!booking) {
+      throw new Error("Booking not found");
+    }
+    
+    // Update the booking status
+    await ctx.db.patch(bookingId, { 
+      status: status as any, // Type cast needed due to union type
+      paymentStatus: paymentStatus as any 
+    });
+    
+    // Find the appointment by bookingId
+    const appointment = await ctx.db
+      .query("appointments")
+      .withIndex("by_booking", q => q.eq("bookingId", bookingId))
+      .first();
+    
+    // If an appointment is found, update it
+    if (appointment) {
+      console.log(`Updating appointment ${appointment._id} for booking ${bookingId}`);
+      // Map booking status to appointment status
+      let appointmentStatus = status;
+      if (status === "confirmed" || status === "paid") {
+        appointmentStatus = "paid";
+      }
+      
+      await ctx.db.patch(appointment._id, {
+        status: appointmentStatus,
+        paymentStatus: paymentStatus
+      });
+    } else {
+      // If no appointment is directly linked, try to find it through other means
+      // This is for backward compatibility with existing data
+      
+      // Get the slot to find details to match on
+      const slot = await ctx.db.get(booking.slotId);
+      if (!slot) {
+        console.warn(`No slot found for booking ${bookingId}`);
+        return { updated: true, appointmentUpdated: false };
+      }
+      
+      // Format the date for appointment lookup
+      const dateString = formatDateForStorage(slot.date);
+      
+      // Find appointments that might match this booking
+      const potentialAppointments = await ctx.db
+        .query("appointments")
+        .withIndex("by_barber", q => q.eq("barberId", booking.barberId))
+        .filter(q => 
+          q.eq(q.field("userId"), booking.userId) && 
+          q.eq(q.field("date"), dateString) &&
+          q.eq(q.field("startTime"), slot.startTime)
+        )
+        .collect();
+      
+      if (potentialAppointments.length > 0) {
+        const appointment = potentialAppointments[0];
+        console.log(`Found matching appointment ${appointment._id} for booking ${bookingId}, updating...`);
+        
+        // Map booking status to appointment status
+        let appointmentStatus = status;
+        if (status === "confirmed" || status === "paid") {
+          appointmentStatus = "paid";
+        }
+        
+        // Update the appointment
+        await ctx.db.patch(appointment._id, {
+          status: appointmentStatus,
+          paymentStatus: paymentStatus,
+          // Also link it to the booking for future lookups
+          bookingId: bookingId
+        });
+        
+        // Update the booking with the appointment ID
+        await ctx.db.patch(bookingId, {
+          appointmentId: appointment._id
+        });
+      } else {
+        console.warn(`No matching appointment found for booking ${bookingId}`);
+      }
+    }
+    
+    return { updated: true };
+  }
+});
+
+// Add a function to synchronize all bookings and appointments
+export const syncBookingsAndAppointments = mutation({
+  args: {},
+  handler: async (ctx) => {
+    console.log("Starting periodic booking and appointment status synchronization");
+    
+    // Get all confirmed/paid bookings
+    const paidBookings = await ctx.db
+      .query("bookings")
+      .filter(q => 
+        q.eq(q.field("paymentStatus"), "succeeded") && 
+        q.eq(q.field("status"), "confirmed")
+      )
+      .collect();
+    
+    console.log(`Found ${paidBookings.length} paid bookings to check for appointment synchronization`);
+    
+    let updatedCount = 0;
+    
+    // For each paid booking, ensure the corresponding appointment is marked as paid
+    for (const booking of paidBookings) {
+      try {
+        // First check if there's a direct relationship via appointmentId
+        if (booking.appointmentId) {
+          const appointment = await ctx.db.get(booking.appointmentId);
+          
+          if (appointment && appointment.status !== "paid") {
+            await ctx.db.patch(booking.appointmentId, {
+              status: "paid",
+              paymentStatus: "paid"
+            });
+            updatedCount++;
+            console.log(`Updated appointment ${appointment._id} to paid via direct reference`);
+          }
+        } else {
+          // If no direct relationship, try to find a matching appointment
+          // Get the slot for time and date info
+          const slot = await ctx.db.get(booking.slotId);
+          if (!slot) continue;
+          
+          const dateString = formatDateForStorage(slot.date);
+          
+          // Find matching appointments
+          const matchingAppointments = await ctx.db
+            .query("appointments")
+            .withIndex("by_barber", q => q.eq("barberId", booking.barberId))
+            .filter(q => 
+              q.eq(q.field("userId"), booking.userId) && 
+              q.eq(q.field("date"), dateString) &&
+              q.eq(q.field("startTime"), slot.startTime) &&
+              q.neq(q.field("status"), "paid")
+            )
+            .collect();
+          
+          if (matchingAppointments.length > 0) {
+            const appointment = matchingAppointments[0];
+            
+            // Update the appointment
+            await ctx.db.patch(appointment._id, {
+              status: "paid",
+              paymentStatus: "paid",
+              bookingId: booking._id
+            });
+            
+            // Update the booking with a backlink
+            await ctx.db.patch(booking._id, {
+              appointmentId: appointment._id
+            });
+            
+            updatedCount++;
+            console.log(`Updated appointment ${appointment._id} to paid via matching criteria`);
+          }
+        }
+      } catch (error) {
+        console.error(`Error syncing booking ${booking._id}:`, error);
+      }
+    }
+    
+    console.log(`Sync job completed. Updated ${updatedCount} appointments.`);
+    return { updatedCount };
+  }
 });

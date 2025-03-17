@@ -296,31 +296,62 @@ export const forceRefresh = mutation({
     
     for (const slot of slots) {
       const hasBooking = slotToBooking.has(slot._id);
+      const booking = slotToBooking.get(slot._id);
+      
+      // NEW: Check for any pending bookings for this slot
+      const pendingBookings = await ctx.db
+        .query("bookings")
+        .withIndex("by_slot", q => q.eq("slotId", slot._id))
+        .filter(q => 
+          q.or(
+            q.eq(q.field("status"), "pending"),
+            q.eq(q.field("status"), "confirmed"),
+            q.eq(q.field("status"), "paid")
+          )
+        )
+        .collect();
+      
+      const hasPendingBooking = pendingBookings.length > 0;
+      
+      // NEW: Check for succeeded payment status
+      const hasSucceededPayment = pendingBookings.some(
+        booking => booking.paymentStatus === "succeeded"
+      );
+      
+      // ENHANCED: Update slot in various scenarios
       
       // Case 1: Slot should be booked according to bookings, but isn't marked as booked
-      if (hasBooking && !slot.isBooked) {
-        console.log(`Fixing slot ${slot._id} (${formatTime(slot.startTime)}): marking as booked`);
+      if ((hasBooking || hasPendingBooking || hasSucceededPayment) && !slot.isBooked) {
         slotsToUpdate.push({
           id: slot._id,
-          update: { isBooked: true, lastUpdated: Date.now() }
+          updates: {
+            isBooked: true,
+            lastUpdated: Date.now()
+          },
+          reason: hasSucceededPayment ? "succeeded payment" : (hasBooking ? "confirmed booking" : "pending booking")
         });
         fixedSlots++;
       }
-      
-      // Case 2: Slot is marked as booked, but there's no corresponding booking
-      else if (slot.isBooked && !hasBooking) {
-        console.log(`Fixing slot ${slot._id} (${formatTime(slot.startTime)}): marking as not booked`);
+      // Case 2: Slot is marked as booked but no bookings exist for it
+      else if (!hasBooking && !hasPendingBooking && slot.isBooked) {
         slotsToUpdate.push({
           id: slot._id,
-          update: { isBooked: false, lastUpdated: Date.now() }
+          updates: {
+            isBooked: false,
+            lastUpdated: Date.now()
+          },
+          reason: "no bookings found"
         });
         fixedSlots++;
       }
-      // Case 3: Status is correct, just update the timestamp
+      // Case 3: Always update the lastUpdated timestamp to trigger UI refreshes
       else {
         slotsToUpdate.push({
           id: slot._id,
-          update: { lastUpdated: Date.now() }
+          updates: {
+            lastUpdated: Date.now()
+          },
+          reason: "refresh timestamp"
         });
       }
     }
@@ -329,13 +360,15 @@ export const forceRefresh = mutation({
     
     // Now update all slots
     for (const slotUpdate of slotsToUpdate) {
-      await ctx.db.patch(slotUpdate.id, slotUpdate.update);
+      console.log(`Updating slot ${slotUpdate.id} (${formatTime(slots.find(s => s._id === slotUpdate.id)?.startTime || 0)}): ${slotUpdate.reason}`);
+      await ctx.db.patch(slotUpdate.id, slotUpdate.updates);
     }
     
+    console.log(`Updated ${slotsToUpdate.length} slots (${fixedSlots} fixed inconsistencies)`);
     console.log('==== Force refresh completed ====\n');
     
     return {
-      refreshed: slots.length,
+      refreshed: slotsToUpdate.length,
       fixed: fixedSlots,
       timestamp: Date.now()
     };
@@ -1011,5 +1044,30 @@ export const updateSlotsFromTemplate = mutation({
       dates: dates.map(d => d.formatted),
       template: template
     };
+  }
+});
+
+// Function to force update a slot's booking status
+export const forceUpdateSlotStatus = mutation({
+  args: {
+    slotId: v.id("slots"),
+    isBooked: v.boolean(),
+    lastUpdated: v.number()
+  },
+  handler: async (ctx, { slotId, isBooked, lastUpdated }) => {
+    // Get the slot to make sure it exists
+    const slot = await ctx.db.get(slotId);
+    if (!slot) {
+      throw new Error("Slot not found");
+    }
+
+    // Directly update the slot's booking status
+    await ctx.db.patch(slotId, {
+      isBooked,
+      lastUpdated
+    });
+
+    console.log(`Explicitly updated slot ${slotId} isBooked status to ${isBooked}`);
+    return { success: true, slotId };
   }
 });

@@ -16,54 +16,47 @@ export function Appointments({ barberId }: AppointmentsProps) {
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedDate, setSelectedDate] = useState<string>(formatDate(new Date()));
   const [updatingStatuses, setUpdatingStatuses] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
   
   console.log("Selected date for appointments:", selectedDate);
   
-  const appointments = useQuery(api.appointments.getByBarberId, { barberId });
+  const appointments = useQuery(api.appointments.getByBarberIdRealtime, { 
+    barberId,
+    refresh: Boolean(refreshKey > 0)
+  });
   console.log("All appointments from barber:", appointments);
+  
+  useEffect(() => {
+    const refreshInterval = setInterval(() => {
+      console.log("Refreshing appointments data...");
+      setRefreshKey(prev => prev + 1);
+    }, 15000);
+    
+    return () => clearInterval(refreshInterval);
+  }, []);
   
   const updateAppointmentStatus = useMutation(api.appointments.updateStatus);
   
   const filteredAppointments = appointments?.filter(appointment => {
-    console.log("Comparing appointment date:", appointment.date, "with selected date:", selectedDate);
+    let appointmentDate = '';
     
-    // Status filtering
-    const statusMatch = selectedStatus === 'all' || appointment.status === selectedStatus;
-    
-    // For completed and cancelled, just check status
-    if (appointment.status === 'completed' || appointment.status === 'cancelled') {
-      return statusMatch;
-    }
-    
-    // Try multiple date formats for comparison
-    let dateMatches = false;
-    
-    // Direct string comparison
-    if (appointment.date === selectedDate) {
-      dateMatches = true;
-    } 
-    // Try to parse and reformat both dates to ensure consistent comparison
-    else {
-      try {
-        // Parse the appointment date (try different formats)
-        let appointmentDateObj;
-        if (!isNaN(Number(appointment.date))) {
-          appointmentDateObj = new Date(Number(appointment.date));
-        } else {
-          appointmentDateObj = new Date(appointment.date);
-        }
-        
-        // Format both as YYYY-MM-DD for comparison
-        const formattedAppointmentDate = formatDate(appointmentDateObj);
-        dateMatches = formattedAppointmentDate === selectedDate;
-        
-        console.log("Reformatted date comparison:", formattedAppointmentDate, selectedDate, dateMatches);
-      } catch (e) {
-        console.error("Error parsing date:", e);
+    try {
+      if (typeof appointment.date === 'string') {
+        appointmentDate = formatDate(new Date(appointment.date));
+      } else if (typeof appointment.date === 'number') {
+        appointmentDate = formatDate(new Date(appointment.date));
       }
+    } catch (e) {
+      console.error("Error parsing date:", e, appointment.date);
+      appointmentDate = String(appointment.date);
     }
     
-    return statusMatch && dateMatches;
+    const statusMatch = selectedStatus === 'all' || appointment.status === selectedStatus;
+    const dateMatch = appointmentDate === selectedDate;
+    
+    console.log(`Appointment ${appointment._id}: Date ${appointmentDate} vs ${selectedDate}, Status ${appointment.status}, Match: ${dateMatch && statusMatch}`);
+    
+    return statusMatch && dateMatch;
   }) || [];
   
   useEffect(() => {
@@ -134,14 +127,12 @@ export function Appointments({ barberId }: AppointmentsProps) {
     return dates;
   };
   
-  // New function to update pending appointments to paid if they've been paid for
   const handleUpdatePendingAppointments = async () => {
     if (!appointments || appointments.length === 0) return;
     
     setUpdatingStatuses(true);
     
     try {
-      // Find all pending appointments
       const pendingAppointments = appointments.filter(app => app.status === 'pending');
       
       if (pendingAppointments.length === 0) {
@@ -153,7 +144,6 @@ export function Appointments({ barberId }: AppointmentsProps) {
         return;
       }
       
-      // Update each one to paid
       let updatedCount = 0;
       for (const appointment of pendingAppointments) {
         try {
@@ -171,6 +161,9 @@ export function Appointments({ barberId }: AppointmentsProps) {
         title: "Appointments Updated",
         description: `Updated ${updatedCount} appointments from pending to paid.`,
       });
+
+      console.log("Triggering data refresh after status updates");
+      setRefreshKey(prev => prev + 1);
     } catch (error) {
       console.error("Error updating appointments:", error);
       toast({
@@ -258,7 +251,6 @@ export function Appointments({ barberId }: AppointmentsProps) {
           </Button>
         </div>
         
-        {/* Add a button to update all pending appointments */}
         <div className="mt-4 pt-2 border-t">
           <Button 
             variant="outline" 
